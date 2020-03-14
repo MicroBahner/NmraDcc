@@ -311,6 +311,8 @@ void ICACHE_RAM_ATTR ExternalInterruptHandler(void)
 void ExternalInterruptHandler(void)
 #endif
 {
+    SET_TP3;
+
 #ifdef ESP32
 //   switch (ISRWatch)
 //   {
@@ -348,17 +350,28 @@ void ExternalInterruptHandler(void)
         #ifdef DCC_DEBUG
             DccProcState.NestedIrqCount++;
         #endif
-        SET_TP3;
         return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
     }
     #endif
-    SET_TP3;
     actMicros = micros();
     bitMicros = actMicros-lastMicros;
     if ( bitMicros < bitMin ) {
-        // too short - my be false interrupt due to glitch or false protocol -> ignore
+        SET_TP4; 
+        // too short - my be false interrupt due to glitch or false protocol -> start over
+        DccRx.State = WAIT_PREAMBLE ;
+        DccRx.BitCount = 0 ;
+        bitMax = MAX_PRAEAMBEL;
+        bitMin = MIN_ONEBITFULL;
+        #if defined ( __STM32F1__ )
+        detachInterrupt( DccProcState.ExtIntNum );
+        #endif
+        #ifdef ESP32
+        ISRWatch = ISREdge;
+        #else
+        attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
+        #endif
+        CLR_TP4;
         CLR_TP3;
-        SET_TP4; CLR_TP4;
         return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
     }
     DccBitVal = ( bitMicros < bitMax );
@@ -376,12 +389,14 @@ void ExternalInterruptHandler(void)
   switch( DccRx.State )
   {
   case WAIT_PREAMBLE:
+    SET_TP2;
     if( DccBitVal )
     {
         SET_TP1;
       DccRx.BitCount++;
      if( DccRx.BitCount > 10 ) {
         DccRx.State = WAIT_START_BIT ;
+        CLR_TP2;
         // While waiting for the start bit, detect halfbit lengths. We will detect the correct
         // sync and detect whether we see a false (e.g. motorola) protocol
 
@@ -407,6 +422,7 @@ void ExternalInterruptHandler(void)
 
   case WAIT_START_BIT:
     // we are looking for first half "0" bit after preamble
+    SET_TP2;
     switch ( halfBit ) {
       case 0:  //SET_TP1;
         // check first part
@@ -430,6 +446,7 @@ void ExternalInterruptHandler(void)
             if( abs(bit2-bit1) > MAX_BITDIFF ) {
                 // the length of the 2 halfbits differ too much -> wrong protokoll
                 DccRx.State = WAIT_PREAMBLE;
+                CLR_TP2;
                 bitMax = MAX_PRAEAMBEL;
                 bitMin = MIN_ONEBITFULL;
                 DccRx.BitCount = 0;
@@ -442,21 +459,19 @@ void ExternalInterruptHandler(void)
                 #else
                 attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
                 #endif
-				SET_TP3;
 				CLR_TP4;
             }
         } else {
             // first '0' half detected in second halfBit
             // wrong sync or not a DCC protokoll
-			CLR_TP3;
-            halfBit = 3;
-			SET_TP3;
+			halfBit = 3;
         }
         break;
       case 3: //SET_TP1;  // previous halfbit was '0'  in second halfbit  
         if ( DccBitVal ) {
             // its a '1' halfbit -> we got only a half '0' bit -> cannot be DCC
             DccRx.State = WAIT_PREAMBLE;
+            CLR_TP2;
             bitMax = MAX_PRAEAMBEL;
             bitMin = MIN_ONEBITFULL;
             DccRx.BitCount = 0;
@@ -465,6 +480,7 @@ void ExternalInterruptHandler(void)
             // but sync is NOT ok, change IRQ edge.
             if ( ISREdge == RISING ) ISREdge = FALLING; else ISREdge = RISING;
             DccRx.State = WAIT_DATA ;
+            CLR_TP2;
             bitMax = MAX_ONEBITFULL;
             bitMin = MIN_ONEBITFULL;
             DccRx.PacketBuf.Size = 0;
@@ -494,12 +510,14 @@ void ExternalInterruptHandler(void)
         if ( DccBitVal ) {
             // second halfbit is 1 -> unknown protokoll
             DccRx.State = WAIT_PREAMBLE;
+            CLR_TP2;
             bitMax = MAX_PRAEAMBEL;
             bitMin = MIN_ONEBITFULL;
             DccRx.BitCount = 0;
         } else {
             // we got the startbit
             DccRx.State = WAIT_DATA ;
+            CLR_TP2;
             bitMax = MAX_ONEBITFULL;
             bitMin = MIN_ONEBITFULL;
             DccRx.PacketBuf.Size = 0;
@@ -557,7 +575,6 @@ void ExternalInterruptHandler(void)
     DccRx.BitCount++;
     if( DccBitVal ) // End of packet?
     {
-      CLR_TP3;
       DccRx.State = WAIT_PREAMBLE ;
       DccRx.BitCount = 0 ;
       bitMax = MAX_PRAEAMBEL;
@@ -570,7 +587,6 @@ void ExternalInterruptHandler(void)
 #ifdef ESP32
 	  portEXIT_CRITICAL_ISR(&mux);
 #endif
-      SET_TP3;
     }
     else  // Get next Byte
       // KGW - Abort immediately if packet is too long.
