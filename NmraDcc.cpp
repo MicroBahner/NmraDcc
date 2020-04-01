@@ -104,10 +104,11 @@
 #define MIN_ONEBITFULL  82
 #define MIN_ONEBITHALF  35
 #define MAX_BITDIFF     24
+#define MAX_GLITCH      16
 
 
 // Debug-Ports
-//#define debug     // Testpulse for logic analyser
+#define debug     // Testpulse for logic analyser
 #ifdef debug 
     #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
         #define MODE_TP1 DDRF |= (1<<2) //pinA2
@@ -256,6 +257,7 @@ static byte  ISRWatch;  // Interrupt Handler Edge Filter
 static byte  ISREdge;   // Holder of the Next Edge we're looking for: RISING or FALLING
 static byte  ISRWatch;  // Interrupt Handler Edge Filter 
 #endif
+byte ISRLevel;          // expected Level at DCC input during ISR ( to detect glitches )
 static word  bitMax, bitMin;
 
 typedef enum
@@ -298,6 +300,8 @@ typedef struct
   DCC_MSG   LastMsg ;
   uint8_t	ExtIntNum; 
   uint8_t	ExtIntPinNum;
+  uint8_t   ExtIntPort;     // use port and bitmask to read input at AVR in ISR
+  uint8_t   ExtIntMask;     // digitalRead is too slow on AVR
   int16_t   myDccAddress;	// Cached value of DCC Address from CVs
   uint8_t   inAccDecDCCAddrNextReceivedMode;
   uint8_t	cv29Value; 
@@ -349,7 +353,7 @@ void ExternalInterruptHandler(void)
 // Bit evaluation without Timer 0 ------------------------------
     uint8_t DccBitVal;
     static int8_t  bit1, bit2 ;
-    static unsigned int  lastMicros = 0;
+    static unsigned int  lastMicros = 0, glitchMicros = 0;
     static byte halfBit, DCC_IrqRunning;
     unsigned int  actMicros, bitMicros;
     #ifdef ALLOW_NESTED_IRQ
@@ -365,6 +369,18 @@ void ExternalInterruptHandler(void)
     #endif
     actMicros = micros();
     bitMicros = actMicros-lastMicros;
+    
+    //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && digitalRead( DccProcState.ExtIntPinNum ) != (ISREdge==RISING) ) ) {
+    //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && ( (PIND & 0x04) != 0 ) != (ISREdge==RISING) ) ) {
+    // if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && ( (PIND & 0x04) != 0 ) != (ISRLevel) ) ) {
+    if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (PIND & 0x04) != (ISRLevel) ) ) {
+    //if ( bitMicros < 25 || ( DccRx.State != WAIT_START_BIT && (PIND & 0x04) != (ISRLevel) ) ) {
+        // it's so short that it may be a glitch or level does not match RISING / FALLING edge -> ignore this IRQ
+        CLR_TP3;
+        SET_TP4; CLR_TP4;
+        return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
+    }
+
     if ( bitMicros < bitMin ) {
         SET_TP4; 
         // too short - my be false interrupt due to glitch or false protocol -> start over
@@ -384,6 +400,7 @@ void ExternalInterruptHandler(void)
         CLR_TP3;
         return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
     }
+    SET_TP1;
     DccBitVal = ( bitMicros < bitMax );
     lastMicros = actMicros;
     
@@ -402,7 +419,7 @@ void ExternalInterruptHandler(void)
     SET_TP2;
     if( DccBitVal )
     {
-        SET_TP1;
+        //SET_TP1;
       DccRx.BitCount++;
      if( DccRx.BitCount > 10 ) {
         DccRx.State = WAIT_START_BIT ;
@@ -421,12 +438,12 @@ void ExternalInterruptHandler(void)
         halfBit = 0;
         bitMax = MAX_ONEBITHALF;
         bitMin = MIN_ONEBITHALF;
-        CLR_TP1;
+        //CLR_TP1;
       }
     } else {
-        SET_TP1;
+        //SET_TP1;
         DccRx.BitCount = 0 ;
-        CLR_TP1;
+        //CLR_TP1;
     }
     break;
 
@@ -442,9 +459,9 @@ void ExternalInterruptHandler(void)
             bit1=bitMicros;
         } else {
             // was "0" half bit, maybe the startbit
-			SET_TP1;
+			//SET_TP1;
             halfBit = 4;
-			CLR_TP1;
+			//CLR_TP1;
         }
         break;
       case 1: //SET_TP1; // previous halfbit was '1'
@@ -488,7 +505,13 @@ void ExternalInterruptHandler(void)
         } else {
             // we got two '0' halfbits -> it's the startbit
             // but sync is NOT ok, change IRQ edge.
-            if ( ISREdge == RISING ) ISREdge = FALLING; else ISREdge = RISING;
+            if ( ISREdge == RISING ) {
+                ISREdge = FALLING;
+                ISRLevel = 0;
+            } else {
+                ISREdge = RISING;
+                ISRLevel = 0x04;//1;
+            }
             DccRx.State = WAIT_DATA ;
             CLR_TP2;
             bitMax = MAX_ONEBITFULL;
@@ -512,10 +535,10 @@ void ExternalInterruptHandler(void)
             #else
 			attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
             #endif
-        CLR_TP1;
+        //CLR_TP1;
 		CLR_TP4;
         break;
-      case 4: SET_TP1; // previous (first) halfbit was 0
+      case 4: //SET_TP1; // previous (first) halfbit was 0
         // if this halfbit is 0 too, we got the startbit
         if ( DccBitVal ) {
             // second halfbit is 1 -> unknown protokoll
@@ -540,7 +563,7 @@ void ExternalInterruptHandler(void)
             DccRx.TempByte = 0 ;
         }
 		
-        CLR_TP1;
+        //CLR_TP1;
 		SET_TP4;
 
 		#if defined ( __STM32F1__ )
@@ -618,6 +641,7 @@ void ExternalInterruptHandler(void)
   #ifdef ALLOW_NESTED_IRQ
   DCC_IrqRunning = false;
   #endif
+  glitchMicros = micros();   // to detect too short times between 2 ISR's
   CLR_TP1;
   CLR_TP3;
 }
@@ -1449,6 +1473,7 @@ void NmraDcc::init( uint8_t ManufacturerId, uint8_t VersionId, uint8_t Flags, ui
   DccProcState.inAccDecDCCAddrNextReceivedMode = 0;
 
   ISREdge = RISING;
+  ISRLevel = 0x04;//1;
 
   #ifdef ESP32
   ISRWatch = ISREdge;
