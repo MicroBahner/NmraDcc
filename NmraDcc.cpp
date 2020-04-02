@@ -374,16 +374,9 @@ void ExternalInterruptHandler(void)
     CLR_TP3;
 #ifdef __AVR_MEGA__
     if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (*DccProcState.ExtIntPort & DccProcState.ExtIntMask) != (ISRLevel) ) ) {
-    //if ( actMicros-glitchMicros < MAX_GLITCH || ( (*DccProcState.ExtIntPort & ISRChkMask) != (ISRLevel) ) ) {
-    //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (*DccProcState.ExtIntPort & DccProcState.ExtIntMask) != (ISREdge==RISING) ) ) {
 #else
-    //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && digitalRead( DccProcState.ExtIntPinNum ) != (ISREdge==RISING) ) ) {
     if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && digitalRead( DccProcState.ExtIntPinNum ) != (ISRLevel) ) ) {
 #endif
-    //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && ( (PIND & 0x04) != 0 ) != (ISREdge==RISING) ) ) {
-    // if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && ( (PIND & 0x04) != 0 ) != (ISRLevel) ) ) {
-    //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (PIND & 0x04) != (ISRLevel) ) ) {
-    //if ( bitMicros < 25 || ( DccRx.State != WAIT_START_BIT && (PIND & 0x04) != (ISRLevel) ) ) {
         // it's so short that it may be a glitch or level does not match RISING / FALLING edge -> ignore this IRQ
         //CLR_TP3;
         SET_TP4; CLR_TP4;
@@ -446,8 +439,8 @@ void ExternalInterruptHandler(void)
 		ISRWatch = CHANGE;
         #else
         attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, CHANGE);
-        ISRChkMask = 0;
-        ISRLevel = 0;
+        ISRChkMask = 0;         // AVR level check is always true with this settings
+        ISRLevel = 0;           // ( there cannot be false edge IRQ's with CHANGE )
         #endif
         halfBit = 0;
         bitMax = MAX_ONEBITHALF;
@@ -499,7 +492,8 @@ void ExternalInterruptHandler(void)
 				ISRWatch = ISREdge;
                 #else
                 attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
-                ISRChkMask = DccProcState.ExtIntMask;
+                // enable level checking ( with direct port reading @ AVR )
+                ISRChkMask = DccProcState.ExtIntMask;       
                 ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
                 #endif
 				CLR_TP4;
@@ -517,6 +511,9 @@ void ExternalInterruptHandler(void)
             CLR_TP2;
             bitMax = MAX_PRAEAMBEL;
             bitMin = MIN_ONEBITFULL;
+            // enable level-checking
+            ISRChkMask = DccProcState.ExtIntMask;
+            ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
             DccRx.BitCount = 0;
         } else {
             // we got two '0' halfbits -> it's the startbit
@@ -528,7 +525,7 @@ void ExternalInterruptHandler(void)
                 ISREdge = RISING;
                 ISRLevel = DccProcState.ExtIntMask;
             }
-            ISRChkMask = DccProcState.ExtIntMask;   // enable checking level 
+            ISRChkMask = DccProcState.ExtIntMask;   // enable level checkin to detect IRQ's at false edge 
             DccRx.State = WAIT_DATA ;
             CLR_TP2;
             bitMax = MAX_ONEBITFULL;
@@ -570,9 +567,6 @@ void ExternalInterruptHandler(void)
             CLR_TP2;
             bitMax = MAX_ONEBITFULL;
             bitMin = MIN_ONEBITFULL;
-            // enable level-checking
-            ISRChkMask = DccProcState.ExtIntMask;
-            ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
             // initialize packet buffer
             DccRx.PacketBuf.Size = 0;
             DccRx.PacketBuf.PreambleBits = 0;
@@ -595,6 +589,9 @@ void ExternalInterruptHandler(void)
         #else
 		attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
         #endif
+        // enable level-checking
+        ISRChkMask = DccProcState.ExtIntMask;
+        ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
 
 		CLR_TP4;
         break;
@@ -1458,6 +1455,8 @@ void NmraDcc::pin( uint8_t ExtIntNum, uint8_t ExtIntPinNum, uint8_t EnablePullup
 #endif
   DccProcState.ExtIntPinNum = ExtIntPinNum;
 #ifdef __AVR_MEGA__
+    // because digitalRead at AVR is slow, we will read the dcc input in the ISR
+    // by direct port access.
     DccProcState.ExtIntPort = portInputRegister( digitalPinToPort(ExtIntPinNum) );
     DccProcState.ExtIntMask = digitalPinToBitMask( ExtIntPinNum );
 #else
@@ -1499,6 +1498,7 @@ void NmraDcc::init( uint8_t ManufacturerId, uint8_t VersionId, uint8_t Flags, ui
   DccProcState.inAccDecDCCAddrNextReceivedMode = 0;
 
   ISREdge = RISING;
+  // level checking to detect false IRQ's fired by glitches
   ISRLevel = DccProcState.ExtIntMask;
   ISRChkMask = DccProcState.ExtIntMask;
 
