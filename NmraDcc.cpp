@@ -165,6 +165,7 @@
         #define CLR_TP4  GPIOB_PCOR = 0x08
     #elif defined (__STM32F1__)
         // STM32F103...
+        /*
         #define MODE_TP1 pinMode( PB12,OUTPUT )   // TP1= PB12
         #define SET_TP1  gpio_write_bit( GPIOB,12, HIGH );
         #define CLR_TP1  gpio_write_bit( GPIOB,12, LOW );
@@ -177,6 +178,19 @@
         #define MODE_TP4 pinMode( PB15,OUTPUT )   // TP4 = PB15
         #define SET_TP4  gpio_write_bit( GPIOB,15, HIGH );
         #define CLR_TP4  gpio_write_bit( GPIOB,15, LOW );
+        */
+        #define MODE_TP1 pinMode( PA1,OUTPUT )   // TP1= PA1
+        #define SET_TP1  gpio_write_bit( GPIOA,1, HIGH );
+        #define CLR_TP1  gpio_write_bit( GPIOA,1, LOW );
+        #define MODE_TP2 pinMode( PA2,OUTPUT )   // TP2= PA2
+        #define SET_TP2  gpio_write_bit( GPIOA,2, HIGH );
+        #define CLR_TP2  gpio_write_bit( GPIOA,2, LOW );
+        #define MODE_TP3 pinMode( PA3,OUTPUT )   // TP3 = PA3
+        #define SET_TP3  gpio_write_bit( GPIOA,3, HIGH );
+        #define CLR_TP3  gpio_write_bit( GPIOA,3, LOW );
+        #define MODE_TP4 pinMode( PB0,OUTPUT )   // TP4 = PB0
+        #define SET_TP4  gpio_write_bit( GPIOB,0, HIGH );
+        #define CLR_TP4  gpio_write_bit( GPIOB,0, LOW );
     #elif defined(ESP8266)
         #define MODE_TP1 pinMode( D5,OUTPUT ) ; // GPIO 14
         #define SET_TP1  GPOS = (1 << D5);
@@ -187,9 +201,12 @@
         #define MODE_TP3 pinMode( D7,OUTPUT ) ; // GPIO 13
         #define SET_TP3  GPOS = (1 << D7);
         #define CLR_TP3  GPOC = (1 << D7);
-        #define MODE_TP4 pinMode( D8,OUTPUT ) ; // GPIO 15
-        #define SET_TP4  GPOC = (1 << D8);
-        #define CLR_TP4  GPOC = (1 << D8);
+        /*#define MODE_TP4 pinMode( D8,OUTPUT ) ; // GPIO 15
+        #define SET_TP4  GPOS = (1 << D8);
+        #define CLR_TP4  GPOC = (1 << D8);*/
+        #define MODE_TP4 pinMode( 16,OUTPUT ) ; // GPIO 16
+        #define SET_TP4  digitalWrite(16,HIGH);
+        #define CLR_TP4  digitalWrite(16,LOW);
     #elif defined(ESP32)
         #define MODE_TP1 pinMode( 33,OUTPUT ) ; // GPIO 33
         #define SET_TP1  GPOS = (1 << 33);
@@ -201,7 +218,7 @@
         #define SET_TP3  GPOS = (1 << 26);
         #define CLR_TP3  GPOC = (1 << 26);
         #define MODE_TP4 pinMode( 27,OUTPUT ) ; // GPIO 27
-        #define SET_TP4  GPOC = (1 << 27);
+        #define SET_TP4  GPOS = (1 << 27);
         #define CLR_TP4  GPOC = (1 << 27);
         
         
@@ -258,6 +275,7 @@ static byte  ISREdge;   // Holder of the Next Edge we're looking for: RISING or 
 static byte  ISRWatch;  // Interrupt Handler Edge Filter 
 #endif
 byte ISRLevel;          // expected Level at DCC input during ISR ( to detect glitches )
+byte ISRChkMask;       // Flag if Level must be checked
 static word  bitMax, bitMin;
 
 typedef enum
@@ -300,7 +318,7 @@ typedef struct
   DCC_MSG   LastMsg ;
   uint8_t	ExtIntNum; 
   uint8_t	ExtIntPinNum;
-  uint8_t   ExtIntPort;     // use port and bitmask to read input at AVR in ISR
+  volatile uint8_t   *ExtIntPort;     // use port and bitmask to read input at AVR in ISR
   uint8_t   ExtIntMask;     // digitalRead is too slow on AVR
   int16_t   myDccAddress;	// Cached value of DCC Address from CVs
   uint8_t   inAccDecDCCAddrNextReceivedMode;
@@ -369,14 +387,22 @@ void ExternalInterruptHandler(void)
     #endif
     actMicros = micros();
     bitMicros = actMicros-lastMicros;
-    
+
+    CLR_TP3;
+#ifdef __AVR_MEGA__
+    if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (*DccProcState.ExtIntPort & DccProcState.ExtIntMask) != (ISRLevel) ) ) {
+    //if ( actMicros-glitchMicros < MAX_GLITCH || ( (*DccProcState.ExtIntPort & ISRChkMask) != (ISRLevel) ) ) {
+    //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (*DccProcState.ExtIntPort & DccProcState.ExtIntMask) != (ISREdge==RISING) ) ) {
+#else
     //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && digitalRead( DccProcState.ExtIntPinNum ) != (ISREdge==RISING) ) ) {
+    if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && digitalRead( DccProcState.ExtIntPinNum ) != (ISRLevel) ) ) {
+#endif
     //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && ( (PIND & 0x04) != 0 ) != (ISREdge==RISING) ) ) {
     // if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && ( (PIND & 0x04) != 0 ) != (ISRLevel) ) ) {
-    if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (PIND & 0x04) != (ISRLevel) ) ) {
+    //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (PIND & 0x04) != (ISRLevel) ) ) {
     //if ( bitMicros < 25 || ( DccRx.State != WAIT_START_BIT && (PIND & 0x04) != (ISRLevel) ) ) {
         // it's so short that it may be a glitch or level does not match RISING / FALLING edge -> ignore this IRQ
-        CLR_TP3;
+        //CLR_TP3;
         SET_TP4; CLR_TP4;
         return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
     }
@@ -396,11 +422,14 @@ void ExternalInterruptHandler(void)
         #else
         attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
         #endif
+        // enable level-checking
+        ISRChkMask = DccProcState.ExtIntMask;
+        ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
         CLR_TP4;
-        CLR_TP3;
+        //CLR_TP3;
         return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
     }
-    SET_TP1;
+    SET_TP3;SET_TP1;
     DccBitVal = ( bitMicros < bitMax );
     lastMicros = actMicros;
     
@@ -434,6 +463,8 @@ void ExternalInterruptHandler(void)
 		ISRWatch = CHANGE;
         #else
         attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, CHANGE);
+        ISRChkMask = 0;
+        ISRLevel = 0;
         #endif
         halfBit = 0;
         bitMax = MAX_ONEBITHALF;
@@ -478,13 +509,15 @@ void ExternalInterruptHandler(void)
                 bitMin = MIN_ONEBITFULL;
                 DccRx.BitCount = 0;
 
-        #if defined ( __STM32F1__ )
+                #if defined ( __STM32F1__ )
 				detachInterrupt( DccProcState.ExtIntNum );
 				#endif
                 #ifdef ESP32
 				ISRWatch = ISREdge;
                 #else
                 attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
+                ISRChkMask = DccProcState.ExtIntMask;
+                ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
                 #endif
 				CLR_TP4;
             }
@@ -510,8 +543,9 @@ void ExternalInterruptHandler(void)
                 ISRLevel = 0;
             } else {
                 ISREdge = RISING;
-                ISRLevel = 0x04;//1;
+                ISRLevel = DccProcState.ExtIntMask;
             }
+            ISRChkMask = DccProcState.ExtIntMask;   // enable checking level 
             DccRx.State = WAIT_DATA ;
             CLR_TP2;
             bitMax = MAX_ONEBITFULL;
@@ -527,14 +561,14 @@ void ExternalInterruptHandler(void)
         }
 		SET_TP4;
 
-			#if defined ( __STM32F1__ )
-			detachInterrupt( DccProcState.ExtIntNum );
-			#endif
-            #ifdef ESP32
-            ISRWatch = ISREdge;
-            #else
-			attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
-            #endif
+        #if defined ( __STM32F1__ )
+        detachInterrupt( DccProcState.ExtIntNum );
+        #endif
+        #ifdef ESP32
+        ISRWatch = ISREdge;
+        #else
+        attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
+        #endif
         //CLR_TP1;
 		CLR_TP4;
         break;
@@ -553,6 +587,10 @@ void ExternalInterruptHandler(void)
             CLR_TP2;
             bitMax = MAX_ONEBITFULL;
             bitMin = MIN_ONEBITFULL;
+            // enable level-checking
+            ISRChkMask = DccProcState.ExtIntMask;
+            ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
+            // initialize packet buffer
             DccRx.PacketBuf.Size = 0;
             DccRx.PacketBuf.PreambleBits = 0;
             for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
@@ -1436,7 +1474,12 @@ void NmraDcc::pin( uint8_t ExtIntNum, uint8_t ExtIntPinNum, uint8_t EnablePullup
   DccProcState.ExtIntNum = ExtIntNum;
 #endif
   DccProcState.ExtIntPinNum = ExtIntPinNum;
-	
+#ifdef __AVR_MEGA__
+    DccProcState.ExtIntPort = portInputRegister( digitalPinToPort(ExtIntPinNum) );
+    DccProcState.ExtIntMask = digitalPinToBitMask( ExtIntPinNum );
+#else
+    DccProcState.ExtIntMask = 1;
+#endif	
   pinMode( ExtIntPinNum, INPUT );
   if( EnablePullup )
     digitalWrite(ExtIntPinNum, HIGH);
@@ -1473,7 +1516,8 @@ void NmraDcc::init( uint8_t ManufacturerId, uint8_t VersionId, uint8_t Flags, ui
   DccProcState.inAccDecDCCAddrNextReceivedMode = 0;
 
   ISREdge = RISING;
-  ISRLevel = 0x04;//1;
+  ISRLevel = DccProcState.ExtIntMask;
+  ISRChkMask = DccProcState.ExtIntMask;
 
   #ifdef ESP32
   ISRWatch = ISREdge;
