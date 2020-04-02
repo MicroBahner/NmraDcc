@@ -165,7 +165,6 @@
         #define CLR_TP4  GPIOB_PCOR = 0x08
     #elif defined (__STM32F1__)
         // STM32F103...
-        /*
         #define MODE_TP1 pinMode( PB12,OUTPUT )   // TP1= PB12
         #define SET_TP1  gpio_write_bit( GPIOB,12, HIGH );
         #define CLR_TP1  gpio_write_bit( GPIOB,12, LOW );
@@ -178,20 +177,7 @@
         #define MODE_TP4 pinMode( PB15,OUTPUT )   // TP4 = PB15
         #define SET_TP4  gpio_write_bit( GPIOB,15, HIGH );
         #define CLR_TP4  gpio_write_bit( GPIOB,15, LOW );
-        */
-        #define MODE_TP1 pinMode( PA1,OUTPUT )   // TP1= PA1
-        #define SET_TP1  gpio_write_bit( GPIOA,1, HIGH );
-        #define CLR_TP1  gpio_write_bit( GPIOA,1, LOW );
-        #define MODE_TP2 pinMode( PA2,OUTPUT )   // TP2= PA2
-        #define SET_TP2  gpio_write_bit( GPIOA,2, HIGH );
-        #define CLR_TP2  gpio_write_bit( GPIOA,2, LOW );
-        #define MODE_TP3 pinMode( PA3,OUTPUT )   // TP3 = PA3
-        #define SET_TP3  gpio_write_bit( GPIOA,3, HIGH );
-        #define CLR_TP3  gpio_write_bit( GPIOA,3, LOW );
-        #define MODE_TP4 pinMode( PB0,OUTPUT )   // TP4 = PB0
-        #define SET_TP4  gpio_write_bit( GPIOB,0, HIGH );
-        #define CLR_TP4  gpio_write_bit( GPIOB,0, LOW );
-    #elif defined(ESP8266)
+        #elif defined(ESP8266)
         #define MODE_TP1 pinMode( D5,OUTPUT ) ; // GPIO 14
         #define SET_TP1  GPOS = (1 << D5);
         #define CLR_TP1  GPOC = (1 << D5);
@@ -201,12 +187,9 @@
         #define MODE_TP3 pinMode( D7,OUTPUT ) ; // GPIO 13
         #define SET_TP3  GPOS = (1 << D7);
         #define CLR_TP3  GPOC = (1 << D7);
-        /*#define MODE_TP4 pinMode( D8,OUTPUT ) ; // GPIO 15
+        #define MODE_TP4 pinMode( D8,OUTPUT ) ; // GPIO 15
         #define SET_TP4  GPOS = (1 << D8);
-        #define CLR_TP4  GPOC = (1 << D8);*/
-        #define MODE_TP4 pinMode( 16,OUTPUT ) ; // GPIO 16
-        #define SET_TP4  digitalWrite(16,HIGH);
-        #define CLR_TP4  digitalWrite(16,LOW);
+        #define CLR_TP4  GPOC = (1 << D8);
     #elif defined(ESP32)
         #define MODE_TP1 pinMode( 33,OUTPUT ) ; // GPIO 33
         #define SET_TP1  GPOS = (1 << 33);
