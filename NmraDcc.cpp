@@ -371,7 +371,7 @@ void ExternalInterruptHandler(void)
 // Bit evaluation without Timer 0 ------------------------------
     uint8_t DccBitVal;
     static int8_t  bit1, bit2 ;
-    static unsigned int  lastMicros = 0, glitchMicros = 0;
+    static unsigned int  lastMicros = 0;
     static byte halfBit, DCC_IrqRunning;
     unsigned int  actMicros, bitMicros;
     #ifdef ALLOW_NESTED_IRQ
@@ -391,20 +391,12 @@ void ExternalInterruptHandler(void)
     CLR_TP3;
 #ifdef __AVR_MEGA__
     if ( bitMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (*DccProcState.ExtIntPort & DccProcState.ExtIntMask) != (ISRLevel) ) ) {
-    //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (*DccProcState.ExtIntPort & DccProcState.ExtIntMask) != (ISRLevel) ) ) {
-    //if ( actMicros-glitchMicros < MAX_GLITCH || ( (*DccProcState.ExtIntPort & ISRChkMask) != (ISRLevel) ) ) {
-    //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (*DccProcState.ExtIntPort & DccProcState.ExtIntMask) != (ISREdge==RISING) ) ) {
 #else
-    //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && digitalRead( DccProcState.ExtIntPinNum ) != (ISREdge==RISING) ) ) {
-    if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && digitalRead( DccProcState.ExtIntPinNum ) != (ISRLevel) ) ) {
+    if ( bitMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && digitalRead( DccProcState.ExtIntPinNum ) != (ISRLevel) ) ) {
 #endif
-    //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && ( (PIND & 0x04) != 0 ) != (ISREdge==RISING) ) ) {
-    // if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && ( (PIND & 0x04) != 0 ) != (ISRLevel) ) ) {
-    //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (PIND & 0x04) != (ISRLevel) ) ) {
-    //if ( bitMicros < 25 || ( DccRx.State != WAIT_START_BIT && (PIND & 0x04) != (ISRLevel) ) ) {
         // it's so short that it may be a glitch or level does not match RISING / FALLING edge -> ignore this IRQ
         //CLR_TP3;
-        SET_TP4; CLR_TP4;
+        SET_TP4; /*delayMicroseconds(1); */ CLR_TP4;
         return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
     }
 
@@ -677,7 +669,6 @@ void ExternalInterruptHandler(void)
   #ifdef ALLOW_NESTED_IRQ
   DCC_IrqRunning = false;
   #endif
-  //glitchMicros = micros();   // to detect too short times between 2 ISR's
   CLR_TP1;
   CLR_TP3;
 }
