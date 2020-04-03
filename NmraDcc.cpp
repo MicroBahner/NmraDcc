@@ -103,8 +103,8 @@
 #define MAX_ONEBITHALF  82
 #define MIN_ONEBITFULL  82
 #define MIN_ONEBITHALF  35
+#define MAX_GLITCH      22
 #define MAX_BITDIFF     24
-#define MAX_GLITCH      16
 
 
 // Debug-Ports
@@ -390,7 +390,8 @@ void ExternalInterruptHandler(void)
 
     CLR_TP3;
 #ifdef __AVR_MEGA__
-    if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (*DccProcState.ExtIntPort & DccProcState.ExtIntMask) != (ISRLevel) ) ) {
+    if ( bitMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (*DccProcState.ExtIntPort & DccProcState.ExtIntMask) != (ISRLevel) ) ) {
+    //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (*DccProcState.ExtIntPort & DccProcState.ExtIntMask) != (ISRLevel) ) ) {
     //if ( actMicros-glitchMicros < MAX_GLITCH || ( (*DccProcState.ExtIntPort & ISRChkMask) != (ISRLevel) ) ) {
     //if ( actMicros-glitchMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (*DccProcState.ExtIntPort & DccProcState.ExtIntMask) != (ISREdge==RISING) ) ) {
 #else
@@ -407,9 +408,10 @@ void ExternalInterruptHandler(void)
         return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
     }
 
+    lastMicros = actMicros;
     if ( bitMicros < bitMin ) {
         SET_TP4; 
-        // too short - my be false interrupt due to glitch or false protocol -> start over
+        // too short - my be false false protocol -> start over
         DccRx.State = WAIT_PREAMBLE ;
         DccRx.BitCount = 0 ;
         bitMax = MAX_PRAEAMBEL;
@@ -431,7 +433,6 @@ void ExternalInterruptHandler(void)
     }
     SET_TP3;SET_TP1;
     DccBitVal = ( bitMicros < bitMax );
-    lastMicros = actMicros;
     
     #ifdef ALLOW_NESTED_IRQ
     DCC_IrqRunning = true;
@@ -518,6 +519,7 @@ void ExternalInterruptHandler(void)
                 attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
                 // enable level checking ( with direct port reading @ AVR )
                 ISRChkMask = DccProcState.ExtIntMask;       
+                ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
                 #endif
 				CLR_TP4;
             }
@@ -675,7 +677,7 @@ void ExternalInterruptHandler(void)
   #ifdef ALLOW_NESTED_IRQ
   DCC_IrqRunning = false;
   #endif
-  glitchMicros = micros();   // to detect too short times between 2 ISR's
+  //glitchMicros = micros();   // to detect too short times between 2 ISR's
   CLR_TP1;
   CLR_TP3;
 }
