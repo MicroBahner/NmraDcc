@@ -463,9 +463,9 @@ void ExternalInterruptHandler(void)
 		ISRWatch = CHANGE;
         #else
         attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, CHANGE);
-        ISRChkMask = 0;
-        ISRLevel = 0;
         #endif
+        ISRChkMask = 0;         // AVR level check is always true with this settings
+        ISRLevel = 0;           // ( there cannot be false edge IRQ's with CHANGE )
         halfBit = 0;
         bitMax = MAX_ONEBITHALF;
         bitMin = MIN_ONEBITHALF;
@@ -516,8 +516,8 @@ void ExternalInterruptHandler(void)
 				ISRWatch = ISREdge;
                 #else
                 attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
-                ISRChkMask = DccProcState.ExtIntMask;
-                ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
+                // enable level checking ( with direct port reading @ AVR )
+                ISRChkMask = DccProcState.ExtIntMask;       
                 #endif
 				CLR_TP4;
             }
@@ -538,14 +538,7 @@ void ExternalInterruptHandler(void)
         } else {
             // we got two '0' halfbits -> it's the startbit
             // but sync is NOT ok, change IRQ edge.
-            if ( ISREdge == RISING ) {
-                ISREdge = FALLING;
-                ISRLevel = 0;
-            } else {
-                ISREdge = RISING;
-                ISRLevel = DccProcState.ExtIntMask;
-            }
-            ISRChkMask = DccProcState.ExtIntMask;   // enable checking level 
+            if ( ISREdge == RISING ) ISREdge = FALLING; else ISREdge = RISING;
             DccRx.State = WAIT_DATA ;
             CLR_TP2;
             bitMax = MAX_ONEBITFULL;
@@ -569,7 +562,10 @@ void ExternalInterruptHandler(void)
         #else
         attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
         #endif
-        //CLR_TP1;
+        // enable level-checking
+        ISRChkMask = DccProcState.ExtIntMask;
+        ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
+    //CLR_TP1;
 		CLR_TP4;
         break;
       case 4: //SET_TP1; // previous (first) halfbit was 0
@@ -587,9 +583,6 @@ void ExternalInterruptHandler(void)
             CLR_TP2;
             bitMax = MAX_ONEBITFULL;
             bitMin = MIN_ONEBITFULL;
-            // enable level-checking
-            ISRChkMask = DccProcState.ExtIntMask;
-            ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
             // initialize packet buffer
             DccRx.PacketBuf.Size = 0;
             DccRx.PacketBuf.PreambleBits = 0;
@@ -612,6 +605,9 @@ void ExternalInterruptHandler(void)
         #else
 		attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
         #endif
+        // enable level-checking
+        ISRChkMask = DccProcState.ExtIntMask;
+        ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
 
 		CLR_TP4;
         break;
@@ -1475,6 +1471,8 @@ void NmraDcc::pin( uint8_t ExtIntNum, uint8_t ExtIntPinNum, uint8_t EnablePullup
 #endif
   DccProcState.ExtIntPinNum = ExtIntPinNum;
 #ifdef __AVR_MEGA__
+    // because digitalRead at AVR is slow, we will read the dcc input in the ISR
+    // by direct port access.
     DccProcState.ExtIntPort = portInputRegister( digitalPinToPort(ExtIntPinNum) );
     DccProcState.ExtIntMask = digitalPinToBitMask( ExtIntPinNum );
 #else
@@ -1516,6 +1514,7 @@ void NmraDcc::init( uint8_t ManufacturerId, uint8_t VersionId, uint8_t Flags, ui
   DccProcState.inAccDecDCCAddrNextReceivedMode = 0;
 
   ISREdge = RISING;
+  // level checking to detect false IRQ's fired by glitches
   ISRLevel = DccProcState.ExtIntMask;
   ISRChkMask = DccProcState.ExtIntMask;
 
