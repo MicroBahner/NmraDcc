@@ -512,9 +512,6 @@ void ExternalInterruptHandler(void)
             DccRx.State = WAIT_PREAMBLE;
             bitMax = MAX_PRAEAMBEL;
             bitMin = MIN_ONEBITFULL;
-            // enable level-checking
-            ISRChkMask = DccProcState.ExtIntMask;
-            ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
             DccRx.BitCount = 0;
         } else {
             // we got two '0' halfbits -> it's the startbit
