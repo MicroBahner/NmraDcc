@@ -31,7 +31,6 @@
 //                       and new signature of notifyDccSpeed and notifyDccFunc
 //            2017-11-29 Ken West (kgw4449@gmail.com):
 //                       Added method and callback headers.
-//            2020-04-04 update bit detection to pass NMRA conformance tests
 //
 //------------------------------------------------------------------------
 //
@@ -746,3 +745,4 @@ extern void notifyDccSigState( uint16_t Addr, uint8_t OutputIndex, uint8_t State
 #endif
 
 #endif
+
