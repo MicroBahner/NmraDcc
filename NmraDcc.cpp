@@ -389,7 +389,7 @@ void ExternalInterruptHandler(void)
     if ( bitMicros < bitMin ) {
         CLR_TP3;
         SET_TP4; CLR_TP4; 
-        // too short - my be false false protocol -> start over
+        // too short - my be false protocol -> start over
         DccRx.State = WAIT_PREAMBLE ;
         DccRx.BitCount = 0 ;
         bitMax = MAX_PRAEAMBEL;
@@ -433,7 +433,7 @@ void ExternalInterruptHandler(void)
         // While waiting for the start bit, detect halfbit lengths. We will detect the correct
         // sync and detect whether we see a false (e.g. motorola) protocol
 
-    #if defined ( __STM32F1__ )
+        #if defined ( __STM32F1__ )
 		detachInterrupt( DccProcState.ExtIntNum );
 		#endif
         #ifdef ESP32
