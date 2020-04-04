@@ -165,7 +165,6 @@
         #define CLR_TP4  GPIOB_PCOR = 0x08
     #elif defined (__STM32F1__)
         // STM32F103...
-        /*
         #define MODE_TP1 pinMode( PB12,OUTPUT )   // TP1= PB12
         #define SET_TP1  gpio_write_bit( GPIOB,12, HIGH );
         #define CLR_TP1  gpio_write_bit( GPIOB,12, LOW );
@@ -178,19 +177,6 @@
         #define MODE_TP4 pinMode( PB15,OUTPUT )   // TP4 = PB15
         #define SET_TP4  gpio_write_bit( GPIOB,15, HIGH );
         #define CLR_TP4  gpio_write_bit( GPIOB,15, LOW );
-        */
-        #define MODE_TP1 pinMode( PA1,OUTPUT )   // TP1= PA1
-        #define SET_TP1  gpio_write_bit( GPIOA,1, HIGH );
-        #define CLR_TP1  gpio_write_bit( GPIOA,1, LOW );
-        #define MODE_TP2 pinMode( PA2,OUTPUT )   // TP2= PA2
-        #define SET_TP2  gpio_write_bit( GPIOA,2, HIGH );
-        #define CLR_TP2  gpio_write_bit( GPIOA,2, LOW );
-        #define MODE_TP3 pinMode( PA3,OUTPUT )   // TP3 = PA3
-        #define SET_TP3  gpio_write_bit( GPIOA,3, HIGH );
-        #define CLR_TP3  gpio_write_bit( GPIOA,3, LOW );
-        #define MODE_TP4 pinMode( PB0,OUTPUT )   // TP4 = PB0
-        #define SET_TP4  gpio_write_bit( GPIOB,0, HIGH );
-        #define CLR_TP4  gpio_write_bit( GPIOB,0, LOW );
     #elif defined(ESP8266)
         #define MODE_TP1 pinMode( D5,OUTPUT ) ; // GPIO 14
         #define SET_TP1  GPOS = (1 << D5);
@@ -201,12 +187,9 @@
         #define MODE_TP3 pinMode( D7,OUTPUT ) ; // GPIO 13
         #define SET_TP3  GPOS = (1 << D7);
         #define CLR_TP3  GPOC = (1 << D7);
-        /*#define MODE_TP4 pinMode( D8,OUTPUT ) ; // GPIO 15
+        #define MODE_TP4 pinMode( D8,OUTPUT ) ; // GPIO 15
         #define SET_TP4  GPOS = (1 << D8);
-        #define CLR_TP4  GPOC = (1 << D8);*/
-        #define MODE_TP4 pinMode( 16,OUTPUT ) ; // GPIO 16
-        #define SET_TP4  digitalWrite(16,HIGH);
-        #define CLR_TP4  digitalWrite(16,LOW);
+        #define CLR_TP4  GPOC = (1 << D8);
     #elif defined(ESP32)
         #define MODE_TP1 pinMode( 33,OUTPUT ) ; // GPIO 33
         #define SET_TP1  GPOS = (1 << 33);
@@ -382,9 +365,11 @@ void ExternalInterruptHandler(void)
         #ifdef DCC_DEBUG
             DccProcState.NestedIrqCount++;
         #endif
+        SET_TP3;
         return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
     }
     #endif
+    SET_TP3;
     actMicros = micros();
     bitMicros = actMicros-lastMicros;
 
@@ -402,7 +387,8 @@ void ExternalInterruptHandler(void)
 
     lastMicros = actMicros;
     if ( bitMicros < bitMin ) {
-        SET_TP4; 
+        CLR_TP3;
+        SET_TP4; CLR_TP4; 
         // too short - my be false false protocol -> start over
         DccRx.State = WAIT_PREAMBLE ;
         DccRx.BitCount = 0 ;
@@ -438,14 +424,12 @@ void ExternalInterruptHandler(void)
   switch( DccRx.State )
   {
   case WAIT_PREAMBLE:
-    SET_TP2;
     if( DccBitVal )
     {
-        //SET_TP1;
+        SET_TP1;
       DccRx.BitCount++;
      if( DccRx.BitCount > 10 ) {
         DccRx.State = WAIT_START_BIT ;
-        CLR_TP2;
         // While waiting for the start bit, detect halfbit lengths. We will detect the correct
         // sync and detect whether we see a false (e.g. motorola) protocol
 
@@ -462,18 +446,17 @@ void ExternalInterruptHandler(void)
         halfBit = 0;
         bitMax = MAX_ONEBITHALF;
         bitMin = MIN_ONEBITHALF;
-        //CLR_TP1;
+        CLR_TP1;
       }
     } else {
-        //SET_TP1;
+        SET_TP1;
         DccRx.BitCount = 0 ;
-        //CLR_TP1;
+        CLR_TP1;
     }
     break;
 
   case WAIT_START_BIT:
     // we are looking for first half "0" bit after preamble
-    SET_TP2;
     switch ( halfBit ) {
       case 0:  //SET_TP1;
         // check first part
@@ -483,9 +466,9 @@ void ExternalInterruptHandler(void)
             bit1=bitMicros;
         } else {
             // was "0" half bit, maybe the startbit
-			//SET_TP1;
+			SET_TP1;
             halfBit = 4;
-			//CLR_TP1;
+			CLR_TP1;
         }
         break;
       case 1: //SET_TP1; // previous halfbit was '1'
@@ -497,7 +480,6 @@ void ExternalInterruptHandler(void)
             if( abs(bit2-bit1) > MAX_BITDIFF ) {
                 // the length of the 2 halfbits differ too much -> wrong protokoll
                 DccRx.State = WAIT_PREAMBLE;
-                CLR_TP2;
                 bitMax = MAX_PRAEAMBEL;
                 bitMin = MIN_ONEBITFULL;
                 DccRx.BitCount = 0;
@@ -513,19 +495,21 @@ void ExternalInterruptHandler(void)
                 ISRChkMask = DccProcState.ExtIntMask;       
                 ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
                 #endif
-				CLR_TP4;
+				SET_TP3;
+                CLR_TP4;
             }
         } else {
             // first '0' half detected in second halfBit
             // wrong sync or not a DCC protokoll
+            CLR_TP3;
 			halfBit = 3;
+            SET_TP3;
         }
         break;
       case 3: //SET_TP1;  // previous halfbit was '0'  in second halfbit  
         if ( DccBitVal ) {
             // its a '1' halfbit -> we got only a half '0' bit -> cannot be DCC
             DccRx.State = WAIT_PREAMBLE;
-            CLR_TP2;
             bitMax = MAX_PRAEAMBEL;
             bitMin = MIN_ONEBITFULL;
             DccRx.BitCount = 0;
@@ -534,7 +518,6 @@ void ExternalInterruptHandler(void)
             // but sync is NOT ok, change IRQ edge.
             if ( ISREdge == RISING ) ISREdge = FALLING; else ISREdge = RISING;
             DccRx.State = WAIT_DATA ;
-            CLR_TP2;
             bitMax = MAX_ONEBITFULL;
             bitMin = MIN_ONEBITFULL;
             DccRx.PacketBuf.Size = 0;
@@ -559,22 +542,20 @@ void ExternalInterruptHandler(void)
         // enable level-checking
         ISRChkMask = DccProcState.ExtIntMask;
         ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
-    //CLR_TP1;
+        CLR_TP1;
 		CLR_TP4;
         break;
-      case 4: //SET_TP1; // previous (first) halfbit was 0
+      case 4: SET_TP1; // previous (first) halfbit was 0
         // if this halfbit is 0 too, we got the startbit
         if ( DccBitVal ) {
             // second halfbit is 1 -> unknown protokoll
             DccRx.State = WAIT_PREAMBLE;
-            CLR_TP2;
             bitMax = MAX_PRAEAMBEL;
             bitMin = MIN_ONEBITFULL;
             DccRx.BitCount = 0;
         } else {
             // we got the startbit
             DccRx.State = WAIT_DATA ;
-            CLR_TP2;
             bitMax = MAX_ONEBITFULL;
             bitMin = MIN_ONEBITFULL;
             // initialize packet buffer
@@ -588,7 +569,7 @@ void ExternalInterruptHandler(void)
             DccRx.TempByte = 0 ;
         }
 		
-        //CLR_TP1;
+        CLR_TP1;
 		SET_TP4;
 
 		#if defined ( __STM32F1__ )
@@ -636,6 +617,7 @@ void ExternalInterruptHandler(void)
     DccRx.BitCount++;
     if( DccBitVal ) // End of packet?
     {
+      CLR_TP3;
       DccRx.State = WAIT_PREAMBLE ;
       DccRx.BitCount = 0 ;
       bitMax = MAX_PRAEAMBEL;
@@ -648,7 +630,8 @@ void ExternalInterruptHandler(void)
 #ifdef ESP32
 	  portEXIT_CRITICAL_ISR(&mux);
 #endif
-    }
+      SET_TP3;
+      }
     else  // Get next Byte
       // KGW - Abort immediately if packet is too long.
       if( DccRx.PacketBuf.Size == MAX_DCC_MESSAGE_LEN ) // Packet is too long - abort
