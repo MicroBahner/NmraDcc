@@ -108,7 +108,7 @@
 
 
 // Debug-Ports
-//#define debug     // Testpulse for logic analyser
+#define debug     // Testpulse for logic analyser
 #ifdef debug 
     #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
         #define MODE_TP1 DDRF |= (1<<2) //pinA2
@@ -355,7 +355,7 @@ void ExternalInterruptHandler(void)
     uint8_t DccBitVal;
     static int8_t  bit1, bit2 ;
     static unsigned int  lastMicros = 0;
-    static byte halfBit, DCC_IrqRunning;
+    static byte halfBit, DCC_IrqRunning, preambleBitCount;
     unsigned int  actMicros, bitMicros;
     #ifdef ALLOW_NESTED_IRQ
     if ( DCC_IrqRunning ) {
@@ -386,7 +386,7 @@ void ExternalInterruptHandler(void)
     }
 
     lastMicros = actMicros;
-    if ( bitMicros < bitMin ) {
+    /*if ( bitMicros < bitMin ) {
         CLR_TP3;
         SET_TP4; CLR_TP4; 
         // too short - my be false protocol -> start over
@@ -408,7 +408,7 @@ void ExternalInterruptHandler(void)
         CLR_TP4;
         //CLR_TP3;
         return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
-    }
+    }*/
     SET_TP3;SET_TP1;
     DccBitVal = ( bitMicros < bitMax );
     
@@ -420,39 +420,10 @@ void ExternalInterruptHandler(void)
 #ifdef DCC_DEBUG
     DccProcState.TickCount++;
 #endif
-
   switch( DccRx.State )
   {
   case WAIT_PREAMBLE:
-    if( DccBitVal )
-    {
-        SET_TP1;
-      DccRx.BitCount++;
-     if( DccRx.BitCount > 10 ) {
-        DccRx.State = WAIT_START_BIT ;
-        // While waiting for the start bit, detect halfbit lengths. We will detect the correct
-        // sync and detect whether we see a false (e.g. motorola) protocol
-
-        #if defined ( __STM32F1__ )
-		detachInterrupt( DccProcState.ExtIntNum );
-		#endif
-        #ifdef ESP32
-		ISRWatch = CHANGE;
-        #else
-        attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, CHANGE);
-        #endif
-        ISRChkMask = 0;         // AVR level check is always true with this settings
-        ISRLevel = 0;           // ( there cannot be false edge IRQ's with CHANGE )
-        halfBit = 0;
-        bitMax = MAX_ONEBITHALF;
-        bitMin = MIN_ONEBITHALF;
-        CLR_TP1;
-      }
-    } else {
-        SET_TP1;
-        DccRx.BitCount = 0 ;
-        CLR_TP1;
-    }
+    // We don't have to do anything special - looking for a preamble condition is done always
     break;
 
   case WAIT_START_BIT:
@@ -476,7 +447,7 @@ void ExternalInterruptHandler(void)
             // its a '1' halfBit -> we are still in the preamble
             halfBit = 0;
             bit2=bitMicros;
-            DccRx.BitCount++;
+            preambleBitCount++;
             if( abs(bit2-bit1) > MAX_BITDIFF ) {
                 // the length of the 2 halfbits differ too much -> wrong protokoll
                 DccRx.State = WAIT_PREAMBLE;
@@ -512,10 +483,11 @@ void ExternalInterruptHandler(void)
             DccRx.State = WAIT_PREAMBLE;
             bitMax = MAX_PRAEAMBEL;
             bitMin = MIN_ONEBITFULL;
-            DccRx.BitCount = 0;
+            preambleBitCount = 0;
         } else {
             // we got two '0' halfbits -> it's the startbit
             // but sync is NOT ok, change IRQ edge.
+            CLR_TP2;
             if ( ISREdge == RISING ) ISREdge = FALLING; else ISREdge = RISING;
             DccRx.State = WAIT_DATA ;
             bitMax = MAX_ONEBITFULL;
@@ -525,7 +497,7 @@ void ExternalInterruptHandler(void)
             for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
             DccRx.PacketBuf.Data[i] = 0;
 
-            DccRx.PacketBuf.PreambleBits = DccRx.BitCount;
+            DccRx.PacketBuf.PreambleBits = preambleBitCount;
             DccRx.BitCount = 0 ;
             DccRx.TempByte = 0 ;
         }
@@ -555,6 +527,7 @@ void ExternalInterruptHandler(void)
             DccRx.BitCount = 0;
         } else {
             // we got the startbit
+            CLR_TP2;
             DccRx.State = WAIT_DATA ;
             bitMax = MAX_ONEBITFULL;
             bitMin = MIN_ONEBITFULL;
@@ -619,6 +592,7 @@ void ExternalInterruptHandler(void)
     {
       CLR_TP3;
       DccRx.State = WAIT_PREAMBLE ;
+      preambleBitCount = 0 ;
       DccRx.BitCount = 0 ;
       bitMax = MAX_PRAEAMBEL;
       bitMin = MIN_ONEBITFULL;
@@ -637,6 +611,7 @@ void ExternalInterruptHandler(void)
       if( DccRx.PacketBuf.Size == MAX_DCC_MESSAGE_LEN ) // Packet is too long - abort
       {
         DccRx.State = WAIT_PREAMBLE ;
+        preambleBitCount = 0 ;
         bitMax = MAX_PRAEAMBEL;
         bitMin = MIN_ONEBITFULL;
         DccRx.BitCount = 0 ;
@@ -649,6 +624,44 @@ void ExternalInterruptHandler(void)
         DccRx.TempByte = 0 ;
       }
   }
+
+  // unless we're already looking for the start bit 
+  // we always search for a preamble ( ( 10 or more consecutive 1 bits )
+  // if we found it within a packet, the packet decoding is aborted because
+  // that much one bits cannot be valid in a packet.
+  if ( DccRx.State != WAIT_START_BIT ) {
+    if( DccBitVal )
+    {
+        //SET_TP1;
+      preambleBitCount++;
+     if( preambleBitCount > 10 ) {
+        SET_TP2;
+        DccRx.State = WAIT_START_BIT ;
+        // While waiting for the start bit, detect halfbit lengths. We will detect the correct
+        // sync and detect whether we see a false (e.g. motorola) protocol
+
+        #if defined ( __STM32F1__ )
+		detachInterrupt( DccProcState.ExtIntNum );
+		#endif
+        #ifdef ESP32
+		ISRWatch = CHANGE;
+        #else
+        attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, CHANGE);
+        #endif
+        ISRChkMask = 0;         // AVR level check is always true with this settings
+        ISRLevel = 0;           // ( there cannot be false edge IRQ's with CHANGE )
+        halfBit = 0;
+        bitMax = MAX_ONEBITHALF;
+        bitMin = MIN_ONEBITHALF;
+        //CLR_TP1;
+      }
+    } else {
+        SET_TP1;
+        preambleBitCount = 0 ;
+        CLR_TP1;
+    }
+  }
+
   #ifdef ALLOW_NESTED_IRQ
   DCC_IrqRunning = false;
   #endif
