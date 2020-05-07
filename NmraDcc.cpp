@@ -103,7 +103,7 @@
 #define MAX_ONEBITHALF  82
 #define MIN_ONEBITFULL  82
 #define MIN_ONEBITHALF  35
-#define MAX_GLITCH      22
+#define MAX_GLITCH      28
 #define MAX_BITDIFF     24
 
 
@@ -259,7 +259,7 @@ static byte  ISRWatch;  // Interrupt Handler Edge Filter
 #endif
 byte ISRLevel;          // expected Level at DCC input during ISR ( to detect glitches )
 byte ISRChkMask;       // Flag if Level must be checked
-static word  bitMax, bitMin;
+static word  bitMax;//, bitMin;
 
 typedef enum
 {
@@ -285,6 +285,7 @@ struct DccRx_t
   uint8_t         DataReady ;
   uint8_t         BitCount ;
   uint8_t         TempByte ;
+  uint8_t         chkSum;
   DCC_MSG         PacketBuf;
   DCC_MSG         PacketCopy;
 } 
@@ -386,31 +387,9 @@ void ExternalInterruptHandler(void)
     }
 
     lastMicros = actMicros;
-    /*if ( bitMicros < bitMin ) {
-        CLR_TP3;
-        SET_TP4; CLR_TP4; 
-        // too short - my be false protocol -> start over
-        DccRx.State = WAIT_PREAMBLE ;
-        DccRx.BitCount = 0 ;
-        bitMax = MAX_PRAEAMBEL;
-        bitMin = MIN_ONEBITFULL;
-        #if defined ( __STM32F1__ )
-        detachInterrupt( DccProcState.ExtIntNum );
-        #endif
-        #ifdef ESP32
-        ISRWatch = ISREdge;
-        #else
-        attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
-        #endif
-        // enable level-checking
-        ISRChkMask = DccProcState.ExtIntMask;
-        ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
-        CLR_TP4;
-        //CLR_TP3;
-        return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
-    }*/
-    SET_TP3;SET_TP1;
+    SET_TP3;//SET_TP1;
     DccBitVal = ( bitMicros < bitMax );
+    if ( DccBitVal ) SET_TP1; else CLR_TP1;
     
     #ifdef ALLOW_NESTED_IRQ
     DCC_IrqRunning = true;
@@ -437,9 +416,9 @@ void ExternalInterruptHandler(void)
             bit1=bitMicros;
         } else {
             // was "0" half bit, maybe the startbit
-			SET_TP1;
+			//SET_TP1;
             halfBit = 4;
-			CLR_TP1;
+			//CLR_TP1;
         }
         break;
       case 1: //SET_TP1; // previous halfbit was '1'
@@ -452,8 +431,8 @@ void ExternalInterruptHandler(void)
                 // the length of the 2 halfbits differ too much -> wrong protokoll
                 DccRx.State = WAIT_PREAMBLE;
                 bitMax = MAX_PRAEAMBEL;
-                bitMin = MIN_ONEBITFULL;
-                DccRx.BitCount = 0;
+                //bitMin = MIN_ONEBITFULL;
+                preambleBitCount = 0;
 
                 #if defined ( __STM32F1__ )
 				detachInterrupt( DccProcState.ExtIntNum );
@@ -482,7 +461,7 @@ void ExternalInterruptHandler(void)
             // its a '1' halfbit -> we got only a half '0' bit -> cannot be DCC
             DccRx.State = WAIT_PREAMBLE;
             bitMax = MAX_PRAEAMBEL;
-            bitMin = MIN_ONEBITFULL;
+            //bitMin = MIN_ONEBITFULL;
             preambleBitCount = 0;
         } else {
             // we got two '0' halfbits -> it's the startbit
@@ -491,17 +470,18 @@ void ExternalInterruptHandler(void)
             if ( ISREdge == RISING ) ISREdge = FALLING; else ISREdge = RISING;
             DccRx.State = WAIT_DATA ;
             bitMax = MAX_ONEBITFULL;
-            bitMin = MIN_ONEBITFULL;
+            //bitMin = MIN_ONEBITFULL;
             DccRx.PacketBuf.Size = 0;
-            DccRx.PacketBuf.PreambleBits = 0;
+            //DccRx.PacketBuf.PreambleBits = 0;
             for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
             DccRx.PacketBuf.Data[i] = 0;
 
             DccRx.PacketBuf.PreambleBits = preambleBitCount;
             DccRx.BitCount = 0 ;
+            DccRx.chkSum = 0 ;
             DccRx.TempByte = 0 ;
         }
-		SET_TP4;
+		//SET_TP4;
 
         #if defined ( __STM32F1__ )
         detachInterrupt( DccProcState.ExtIntNum );
@@ -514,36 +494,37 @@ void ExternalInterruptHandler(void)
         // enable level-checking
         ISRChkMask = DccProcState.ExtIntMask;
         ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
-        CLR_TP1;
-		CLR_TP4;
+        //CLR_TP1;
+		//CLR_TP4;
         break;
-      case 4: SET_TP1; // previous (first) halfbit was 0
+      case 4: //SET_TP1; // previous (first) halfbit was 0
         // if this halfbit is 0 too, we got the startbit
         if ( DccBitVal ) {
             // second halfbit is 1 -> unknown protokoll
             DccRx.State = WAIT_PREAMBLE;
             bitMax = MAX_PRAEAMBEL;
-            bitMin = MIN_ONEBITFULL;
+            //bitMin = MIN_ONEBITFULL;
             DccRx.BitCount = 0;
         } else {
             // we got the startbit
             CLR_TP2;
             DccRx.State = WAIT_DATA ;
             bitMax = MAX_ONEBITFULL;
-            bitMin = MIN_ONEBITFULL;
+            //bitMin = MIN_ONEBITFULL;
             // initialize packet buffer
             DccRx.PacketBuf.Size = 0;
-            DccRx.PacketBuf.PreambleBits = 0;
+            //DccRx.PacketBuf.PreambleBits = 0;
             for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
             DccRx.PacketBuf.Data[i] = 0;
 
             DccRx.PacketBuf.PreambleBits = DccRx.BitCount;
             DccRx.BitCount = 0 ;
+            DccRx.chkSum = 0 ;
             DccRx.TempByte = 0 ;
         }
 		
-        CLR_TP1;
-		SET_TP4;
+        //CLR_TP1;
+		//SET_TP4;
 
 		#if defined ( __STM32F1__ )
 		detachInterrupt( DccProcState.ExtIntNum );
@@ -557,7 +538,7 @@ void ExternalInterruptHandler(void)
         ISRChkMask = DccProcState.ExtIntMask;
         ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
 
-		CLR_TP4;
+		//CLR_TP4;
         break;
             
     }        
@@ -575,13 +556,14 @@ void ExternalInterruptHandler(void)
       {
         DccRx.State = WAIT_PREAMBLE ;
         bitMax = MAX_PRAEAMBEL;
-        bitMin = MIN_ONEBITFULL;
+        //bitMin = MIN_ONEBITFULL;
         DccRx.BitCount = 0 ;
       }
       else
       {
         DccRx.State = WAIT_END_BIT ;
         DccRx.PacketBuf.Data[ DccRx.PacketBuf.Size++ ] = DccRx.TempByte ;
+        DccRx.chkSum ^= DccRx.TempByte;
       }
     }
     break;
@@ -590,30 +572,32 @@ void ExternalInterruptHandler(void)
     DccRx.BitCount++;
     if( DccBitVal ) // End of packet?
     {
-      CLR_TP3;
+      CLR_TP3; SET_TP4;
       DccRx.State = WAIT_PREAMBLE ;
-      preambleBitCount = 0 ;
       DccRx.BitCount = 0 ;
       bitMax = MAX_PRAEAMBEL;
-      bitMin = MIN_ONEBITFULL;
-#ifdef ESP32
-	  portENTER_CRITICAL_ISR(&mux);
-#endif
-      DccRx.PacketCopy = DccRx.PacketBuf ;
-      DccRx.DataReady = 1 ;
-#ifdef ESP32
-	  portEXIT_CRITICAL_ISR(&mux);
-#endif
-      SET_TP3;
+      //bitMin = MIN_ONEBITFULL;
+      if ( DccRx.chkSum == 0 ) { 
+        // Packet is valid
+        preambleBitCount = 0 ;CLR_TP4;SET_TP4;
+        #ifdef ESP32
+        portENTER_CRITICAL_ISR(&mux);
+        #endif
+        DccRx.PacketCopy = DccRx.PacketBuf ;
+        DccRx.DataReady = 1 ;
+        #ifdef ESP32
+        portEXIT_CRITICAL_ISR(&mux);
+        #endif
+      }
+      SET_TP3; CLR_TP4;
       }
     else  // Get next Byte
       // KGW - Abort immediately if packet is too long.
       if( DccRx.PacketBuf.Size == MAX_DCC_MESSAGE_LEN ) // Packet is too long - abort
       {
         DccRx.State = WAIT_PREAMBLE ;
-        preambleBitCount = 0 ;
         bitMax = MAX_PRAEAMBEL;
-        bitMin = MIN_ONEBITFULL;
+        //bitMin = MIN_ONEBITFULL;
         DccRx.BitCount = 0 ;
       }
       else
@@ -652,20 +636,20 @@ void ExternalInterruptHandler(void)
         ISRLevel = 0;           // ( there cannot be false edge IRQ's with CHANGE )
         halfBit = 0;
         bitMax = MAX_ONEBITHALF;
-        bitMin = MIN_ONEBITHALF;
+        //bitMin = MIN_ONEBITHALF;
         //CLR_TP1;
       }
     } else {
-        SET_TP1;
+        //SET_TP1;
         preambleBitCount = 0 ;
-        CLR_TP1;
+        //CLR_TP1;
     }
   }
 
   #ifdef ALLOW_NESTED_IRQ
   DCC_IrqRunning = false;
   #endif
-  CLR_TP1;
+  //CLR_TP1;
   CLR_TP3;
 }
 
@@ -1495,7 +1479,7 @@ void NmraDcc::init( uint8_t ManufacturerId, uint8_t VersionId, uint8_t Flags, ui
   MODE_TP3;
   MODE_TP4;
   bitMax = MAX_ONEBITFULL;
-  bitMin = MIN_ONEBITFULL;
+  //bitMin = MIN_ONEBITFULL;
 
   DccProcState.Flags = Flags ;
   DccProcState.OpsModeAddressBaseCV = OpsModeAddressBaseCV ;
@@ -1634,7 +1618,7 @@ uint8_t NmraDcc::process()
       countOf.Tel++;
       #endif
     
-    uint8_t xorValue = 0 ;
+    /*uint8_t xorValue = 0 ;
     
     for(uint8_t i = 0; i < DccRx.PacketCopy.Size; i++)
       xorValue ^= DccRx.PacketCopy.Data[i];
@@ -1644,11 +1628,11 @@ uint8_t NmraDcc::process()
       countOf.Err++;
       #endif
       return 0 ;
-    } else {
+    } else { */
 		if( notifyDccMsg ) 	notifyDccMsg( &Msg );
 		
         execDccProcessor( &Msg );
-    }
+    //}
     return 1 ;
   }
 
