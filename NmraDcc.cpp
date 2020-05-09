@@ -84,14 +84,14 @@
 //           DCC 1: _________XXXXXXXXX_________XXXXXXXXX_________
 //                           |<--------146us------>|
 //                           ^-INTx            ^-INTx
-//                           less than 138us: its a one-Bit
+//                           less than 146us: its a one-Bit
 //                                        
 //
 //                           |<-----------------232us----------->|
 //           DCC 0: _________XXXXXXXXXXXXXXXXXX__________________XXXXXXXX__________
 //                           |<--------146us------->|
 //                           ^-INTx                              ^-INTx
-//                           greater than 138us: its a zero bit
+//                           greater than 146us: its a zero bit
 //                                        
 //                                        
 //                                           
@@ -387,9 +387,8 @@ void ExternalInterruptHandler(void)
     }
 
     lastMicros = actMicros;
-    SET_TP3;//SET_TP1;
+    SET_TP3;
     DccBitVal = ( bitMicros < bitMax );
-    if ( DccBitVal ) SET_TP1; else CLR_TP1;
     
     #ifdef ALLOW_NESTED_IRQ
     DCC_IrqRunning = true;
@@ -408,7 +407,7 @@ void ExternalInterruptHandler(void)
   case WAIT_START_BIT:
     // we are looking for first half "0" bit after preamble
     switch ( halfBit ) {
-      case 0:  //SET_TP1;
+      case 0: 
         // check first part
         if ( DccBitVal ) {
             // is still 1-bit (Preamble)
@@ -416,12 +415,10 @@ void ExternalInterruptHandler(void)
             bit1=bitMicros;
         } else {
             // was "0" half bit, maybe the startbit
-			//SET_TP1;
-            halfBit = 4;
-			//CLR_TP1;
-        }
+			halfBit = 4;
+		}
         break;
-      case 1: //SET_TP1; // previous halfbit was '1'
+      case 1: // previous halfbit was '1'
         if ( DccBitVal ) {
             // its a '1' halfBit -> we are still in the preamble
             halfBit = 0;
@@ -456,7 +453,7 @@ void ExternalInterruptHandler(void)
             SET_TP3;
         }
         break;
-      case 3: //SET_TP1;  // previous halfbit was '0'  in second halfbit  
+      case 3: // previous halfbit was '0'  in second halfbit  
         if ( DccBitVal ) {
             // its a '1' halfbit -> we got only a half '0' bit -> cannot be DCC
             DccRx.State = WAIT_PREAMBLE;
@@ -469,17 +466,17 @@ void ExternalInterruptHandler(void)
             CLR_TP2;
             if ( ISREdge == RISING ) ISREdge = FALLING; else ISREdge = RISING;
             DccRx.State = WAIT_DATA ;
+            CLR_TP1;
             bitMax = MAX_ONEBITFULL;
             //bitMin = MIN_ONEBITFULL;
             DccRx.PacketBuf.Size = 0;
-            //DccRx.PacketBuf.PreambleBits = 0;
             for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
             DccRx.PacketBuf.Data[i] = 0;
-
             DccRx.PacketBuf.PreambleBits = preambleBitCount;
             DccRx.BitCount = 0 ;
             DccRx.chkSum = 0 ;
             DccRx.TempByte = 0 ;
+            SET_TP1;
         }
 		//SET_TP4;
 
@@ -494,37 +491,37 @@ void ExternalInterruptHandler(void)
         // enable level-checking
         ISRChkMask = DccProcState.ExtIntMask;
         ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
-        //CLR_TP1;
-		//CLR_TP4;
+        //CLR_TP4;
         break;
-      case 4: //SET_TP1; // previous (first) halfbit was 0
+      case 4: // previous (first) halfbit was 0
         // if this halfbit is 0 too, we got the startbit
         if ( DccBitVal ) {
             // second halfbit is 1 -> unknown protokoll
             DccRx.State = WAIT_PREAMBLE;
             bitMax = MAX_PRAEAMBEL;
             //bitMin = MIN_ONEBITFULL;
+            preambleBitCount = 0;
+            CLR_TP2;
             DccRx.BitCount = 0;
         } else {
             // we got the startbit
             CLR_TP2;
             DccRx.State = WAIT_DATA ;
+            CLR_TP1;
             bitMax = MAX_ONEBITFULL;
             //bitMin = MIN_ONEBITFULL;
             // initialize packet buffer
             DccRx.PacketBuf.Size = 0;
-            //DccRx.PacketBuf.PreambleBits = 0;
             for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
             DccRx.PacketBuf.Data[i] = 0;
-
-            DccRx.PacketBuf.PreambleBits = DccRx.BitCount;
+            DccRx.PacketBuf.PreambleBits = preambleBitCount;
             DccRx.BitCount = 0 ;
             DccRx.chkSum = 0 ;
             DccRx.TempByte = 0 ;
+            SET_TP1;
         }
 		
-        //CLR_TP1;
-		//SET_TP4;
+        //SET_TP4;
 
 		#if defined ( __STM32F1__ )
 		detachInterrupt( DccProcState.ExtIntNum );
@@ -570,8 +567,7 @@ void ExternalInterruptHandler(void)
 
   case WAIT_END_BIT:
     DccRx.BitCount++;
-    if( DccBitVal ) // End of packet?
-    {
+    if( DccBitVal ) { // End of packet?
       CLR_TP3; SET_TP4;
       DccRx.State = WAIT_PREAMBLE ;
       DccRx.BitCount = 0 ;
@@ -579,7 +575,9 @@ void ExternalInterruptHandler(void)
       //bitMin = MIN_ONEBITFULL;
       if ( DccRx.chkSum == 0 ) { 
         // Packet is valid
-        preambleBitCount = 0 ;CLR_TP4;SET_TP4;
+        SET_TP2;
+        SET_TP1;
+        CLR_TP2;
         #ifdef ESP32
         portENTER_CRITICAL_ISR(&mux);
         #endif
@@ -588,10 +586,10 @@ void ExternalInterruptHandler(void)
         #ifdef ESP32
         portEXIT_CRITICAL_ISR(&mux);
         #endif
-      }
+        preambleBitCount = 0 ;
+      } else CLR_TP1;
       SET_TP3; CLR_TP4;
-      }
-    else  // Get next Byte
+    } else  { // Get next Byte
       // KGW - Abort immediately if packet is too long.
       if( DccRx.PacketBuf.Size == MAX_DCC_MESSAGE_LEN ) // Packet is too long - abort
       {
@@ -607,6 +605,7 @@ void ExternalInterruptHandler(void)
         DccRx.BitCount = 0 ;
         DccRx.TempByte = 0 ;
       }
+    }
   }
 
   // unless we're already looking for the start bit 
@@ -616,11 +615,12 @@ void ExternalInterruptHandler(void)
   if ( DccRx.State != WAIT_START_BIT ) {
     if( DccBitVal )
     {
-        //SET_TP1;
       preambleBitCount++;
-     if( preambleBitCount > 10 ) {
-        SET_TP2;
+      //SET_TP2;
+      if( preambleBitCount > 10 ) {
+        CLR_TP2;
         DccRx.State = WAIT_START_BIT ;
+        SET_TP2;
         // While waiting for the start bit, detect halfbit lengths. We will detect the correct
         // sync and detect whether we see a false (e.g. motorola) protocol
 
@@ -640,9 +640,8 @@ void ExternalInterruptHandler(void)
         //CLR_TP1;
       }
     } else {
-        //SET_TP1;
+        CLR_TP2;;
         preambleBitCount = 0 ;
-        //CLR_TP1;
     }
   }
 
