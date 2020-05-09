@@ -103,7 +103,7 @@
 #define MAX_ONEBITHALF  82
 #define MIN_ONEBITFULL  82
 #define MIN_ONEBITHALF  35
-#define MAX_GLITCH      28
+//#define MAX_GLITCH      28
 #define MAX_BITDIFF     24
 
 
@@ -259,7 +259,7 @@ static byte  ISRWatch;  // Interrupt Handler Edge Filter
 #endif
 byte ISRLevel;          // expected Level at DCC input during ISR ( to detect glitches )
 byte ISRChkMask;       // Flag if Level must be checked
-static word  bitMax;//, bitMin;
+static word  bitMax, bitMin;
 
 typedef enum
 {
@@ -376,11 +376,11 @@ void ExternalInterruptHandler(void)
 
     CLR_TP3;
 #ifdef __AVR_MEGA__
-    if ( bitMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && (*DccProcState.ExtIntPort & DccProcState.ExtIntMask) != (ISRLevel) ) ) {
+    if ( bitMicros < bitMin || ( DccRx.State != WAIT_START_BIT && (*DccProcState.ExtIntPort & DccProcState.ExtIntMask) != (ISRLevel) ) ) {
 #else
-    if ( bitMicros < MAX_GLITCH || ( DccRx.State != WAIT_START_BIT && digitalRead( DccProcState.ExtIntPinNum ) != (ISRLevel) ) ) {
+    if ( bitMicros < bitMin || ( DccRx.State != WAIT_START_BIT && digitalRead( DccProcState.ExtIntPinNum ) != (ISRLevel) ) ) {
 #endif
-        // it's so short that it may be a glitch or level does not match RISING / FALLING edge -> ignore this IRQ
+        // too short - my be false interrupt due to glitch or false protocol  or level does not match RISING / FALLING edge -> ignore this IRQ
         //CLR_TP3;
         SET_TP4; /*delayMicroseconds(1); */ CLR_TP4;
         return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
@@ -428,7 +428,7 @@ void ExternalInterruptHandler(void)
                 // the length of the 2 halfbits differ too much -> wrong protokoll
                 DccRx.State = WAIT_PREAMBLE;
                 bitMax = MAX_PRAEAMBEL;
-                //bitMin = MIN_ONEBITFULL;
+                bitMin = MIN_ONEBITFULL;
                 preambleBitCount = 0;
 
                 #if defined ( __STM32F1__ )
@@ -458,7 +458,7 @@ void ExternalInterruptHandler(void)
             // its a '1' halfbit -> we got only a half '0' bit -> cannot be DCC
             DccRx.State = WAIT_PREAMBLE;
             bitMax = MAX_PRAEAMBEL;
-            //bitMin = MIN_ONEBITFULL;
+            bitMin = MIN_ONEBITFULL;
             preambleBitCount = 0;
         } else {
             // we got two '0' halfbits -> it's the startbit
@@ -468,7 +468,7 @@ void ExternalInterruptHandler(void)
             DccRx.State = WAIT_DATA ;
             CLR_TP1;
             bitMax = MAX_ONEBITFULL;
-            //bitMin = MIN_ONEBITFULL;
+            bitMin = MIN_ONEBITFULL;
             DccRx.PacketBuf.Size = 0;
             for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
             DccRx.PacketBuf.Data[i] = 0;
@@ -499,7 +499,7 @@ void ExternalInterruptHandler(void)
             // second halfbit is 1 -> unknown protokoll
             DccRx.State = WAIT_PREAMBLE;
             bitMax = MAX_PRAEAMBEL;
-            //bitMin = MIN_ONEBITFULL;
+            bitMin = MIN_ONEBITFULL;
             preambleBitCount = 0;
             CLR_TP2;
             DccRx.BitCount = 0;
@@ -509,7 +509,7 @@ void ExternalInterruptHandler(void)
             DccRx.State = WAIT_DATA ;
             CLR_TP1;
             bitMax = MAX_ONEBITFULL;
-            //bitMin = MIN_ONEBITFULL;
+            bitMin = MIN_ONEBITFULL;
             // initialize packet buffer
             DccRx.PacketBuf.Size = 0;
             for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
@@ -553,7 +553,7 @@ void ExternalInterruptHandler(void)
       {
         DccRx.State = WAIT_PREAMBLE ;
         bitMax = MAX_PRAEAMBEL;
-        //bitMin = MIN_ONEBITFULL;
+        bitMin = MIN_ONEBITFULL;
         DccRx.BitCount = 0 ;
       }
       else
@@ -572,7 +572,7 @@ void ExternalInterruptHandler(void)
       DccRx.State = WAIT_PREAMBLE ;
       DccRx.BitCount = 0 ;
       bitMax = MAX_PRAEAMBEL;
-      //bitMin = MIN_ONEBITFULL;
+      bitMin = MIN_ONEBITFULL;
       if ( DccRx.chkSum == 0 ) { 
         // Packet is valid
         SET_TP2;
@@ -587,7 +587,15 @@ void ExternalInterruptHandler(void)
         portEXIT_CRITICAL_ISR(&mux);
         #endif
         preambleBitCount = 0 ;
-      } else CLR_TP1;
+      } else {
+        // Wrong checksum
+        CLR_TP1;
+        #ifdef DCC_DBGVAR
+        DB_PRINT("Cerr");
+        countOf.Err++;
+        #endif
+      }
+
       SET_TP3; CLR_TP4;
     } else  { // Get next Byte
       // KGW - Abort immediately if packet is too long.
@@ -595,7 +603,7 @@ void ExternalInterruptHandler(void)
       {
         DccRx.State = WAIT_PREAMBLE ;
         bitMax = MAX_PRAEAMBEL;
-        //bitMin = MIN_ONEBITFULL;
+        bitMin = MIN_ONEBITFULL;
         DccRx.BitCount = 0 ;
       }
       else
@@ -636,7 +644,7 @@ void ExternalInterruptHandler(void)
         ISRLevel = 0;           // ( there cannot be false edge IRQ's with CHANGE )
         halfBit = 0;
         bitMax = MAX_ONEBITHALF;
-        //bitMin = MIN_ONEBITHALF;
+        bitMin = MIN_ONEBITHALF;
         //CLR_TP1;
       }
     } else {
@@ -1478,7 +1486,7 @@ void NmraDcc::init( uint8_t ManufacturerId, uint8_t VersionId, uint8_t Flags, ui
   MODE_TP3;
   MODE_TP4;
   bitMax = MAX_ONEBITFULL;
-  //bitMin = MIN_ONEBITFULL;
+  bitMin = MIN_ONEBITFULL;
 
   DccProcState.Flags = Flags ;
   DccProcState.OpsModeAddressBaseCV = OpsModeAddressBaseCV ;
@@ -1599,7 +1607,6 @@ uint8_t NmraDcc::process()
   if( DccRx.DataReady )
   {
     // We need to do this check with interrupts disabled
-    //SET_TP4;
 #ifdef ESP32
     portENTER_CRITICAL(&mux);
 #else
@@ -1613,25 +1620,14 @@ uint8_t NmraDcc::process()
 #else
     interrupts();
 #endif
-      #ifdef DCC_DBGVAR
-      countOf.Tel++;
-      #endif
+    // Checking of the XOR-byte is now done in the ISR already
+    #ifdef DCC_DBGVAR
+    countOf.Tel++;
+    #endif
     
-    /*uint8_t xorValue = 0 ;
-    
-    for(uint8_t i = 0; i < DccRx.PacketCopy.Size; i++)
-      xorValue ^= DccRx.PacketCopy.Data[i];
-    if(xorValue) {
-      #ifdef DCC_DBGVAR
-      DB_PRINT("Cerr");
-      countOf.Err++;
-      #endif
-      return 0 ;
-    } else { */
-		if( notifyDccMsg ) 	notifyDccMsg( &Msg );
+	if( notifyDccMsg ) 	notifyDccMsg( &Msg );
 		
-        execDccProcessor( &Msg );
-    //}
+     execDccProcessor( &Msg );
     return 1 ;
   }
 
