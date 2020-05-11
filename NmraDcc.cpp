@@ -37,7 +37,7 @@
 //                       Minor fixes to pass NMRA Baseline Conformance Tests.
 //            2018-12-17 added ESP32 support by Trusty (thierry@lapajaparis.net)
 //            2019-02-17 added ESP32 specific changes by Hans Tanner
-//
+//            2020-05-11 
 //------------------------------------------------------------------------
 //
 // purpose:   Provide a simplified interface to decode NMRA DCC packets
@@ -98,6 +98,14 @@
 //           
 //------------------------------------------------------------------------
 
+#define SUPPORT_ZERO_BIT_STRETCHING
+/*#ifdef SUPPORT_ZERO_BIT_STRETCHING
+    #define MAX_ZEROBITFULL 10100
+    #define MAX_ZEROBITHALF 10000
+#else
+    #define MAX_ZEROBITFULL 250
+    #define MAX_ZEROBITHALF 125
+#endif*/
 #define MAX_ONEBITFULL  146
 #define MAX_PRAEAMBEL   146 
 #define MAX_ONEBITHALF  82
@@ -370,24 +378,52 @@ void ExternalInterruptHandler(void)
         return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
     }
     #endif
-    SET_TP3;
     actMicros = micros();
     bitMicros = actMicros-lastMicros;
 
-    CLR_TP3;
+        CLR_TP3; SET_TP3;
 #ifdef __AVR_MEGA__
     if ( bitMicros < bitMin || ( DccRx.State != WAIT_START_BIT && (*DccProcState.ExtIntPort & DccProcState.ExtIntMask) != (ISRLevel) ) ) {
 #else
     if ( bitMicros < bitMin || ( DccRx.State != WAIT_START_BIT && digitalRead( DccProcState.ExtIntPinNum ) != (ISRLevel) ) ) {
 #endif
         // too short - my be false interrupt due to glitch or false protocol  or level does not match RISING / FALLING edge -> ignore this IRQ
-        //CLR_TP3;
+        CLR_TP3;
         SET_TP4; /*delayMicroseconds(1); */ CLR_TP4;
         return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
     }
+        CLR_TP3;  SET_TP3;
 
     lastMicros = actMicros;
-    SET_TP3;
+#ifndef SUPPORT_ZERO_BIT_STRETCHING
+    //if ( bitMicros > MAX_ZEROBITFULL ) {
+    if ( bitMicros > (bitMax*2) ) {
+        // too long - my be false protocol -> start over
+        DccRx.State = WAIT_PREAMBLE ;
+        DccRx.BitCount = 0 ;
+        preambleBitCount = 0;
+        // SET_TP2; CLR_TP2;
+        bitMax = MAX_PRAEAMBEL;
+        bitMin = MIN_ONEBITFULL;
+        #if defined ( __STM32F1__ )
+        detachInterrupt( DccProcState.ExtIntNum );
+        #endif
+        #ifdef ESP32
+        ISRWatch = ISREdge;
+        #else
+        attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, ISREdge );
+        #endif
+        // enable level-checking
+        ISRChkMask = DccProcState.ExtIntMask;
+        ISRLevel = (ISREdge==RISING)? DccProcState.ExtIntMask : 0 ;
+        CLR_TP3;
+        //CLR_TP3;
+        return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
+    }
+        CLR_TP3;
+        SET_TP3;
+#endif
+    
     DccBitVal = ( bitMicros < bitMax );
     
     #ifdef ALLOW_NESTED_IRQ
@@ -402,6 +438,7 @@ void ExternalInterruptHandler(void)
   {
   case WAIT_PREAMBLE:
     // We don't have to do anything special - looking for a preamble condition is done always
+    SET_TP2;
     break;
 
   case WAIT_START_BIT:
@@ -430,7 +467,7 @@ void ExternalInterruptHandler(void)
                 bitMax = MAX_PRAEAMBEL;
                 bitMin = MIN_ONEBITFULL;
                 preambleBitCount = 0;
-
+                // SET_TP2; CLR_TP2;
                 #if defined ( __STM32F1__ )
 				detachInterrupt( DccProcState.ExtIntNum );
 				#endif
@@ -460,6 +497,7 @@ void ExternalInterruptHandler(void)
             bitMax = MAX_PRAEAMBEL;
             bitMin = MIN_ONEBITFULL;
             preambleBitCount = 0;
+            // SET_TP2; CLR_TP2;
         } else {
             // we got two '0' halfbits -> it's the startbit
             // but sync is NOT ok, change IRQ edge.
@@ -542,6 +580,7 @@ void ExternalInterruptHandler(void)
     break;
 
   case WAIT_DATA:
+    CLR_TP2;
     DccRx.BitCount++;
     DccRx.TempByte = ( DccRx.TempByte << 1 ) ;
     if( DccBitVal )
@@ -566,6 +605,7 @@ void ExternalInterruptHandler(void)
     break;
 
   case WAIT_END_BIT:
+    SET_TP2;CLR_TP2;
     DccRx.BitCount++;
     if( DccBitVal ) { // End of packet?
       CLR_TP3; SET_TP4;
@@ -584,6 +624,7 @@ void ExternalInterruptHandler(void)
         #ifdef ESP32
         portEXIT_CRITICAL_ISR(&mux);
         #endif
+        // SET_TP2; CLR_TP2;
         preambleBitCount = 0 ;
       } else {
         // Wrong checksum
@@ -646,8 +687,9 @@ void ExternalInterruptHandler(void)
         //CLR_TP1;
       }
     } else {
-        CLR_TP2; CLR_TP1;
+        CLR_TP1;
         preambleBitCount = 0 ;
+        // SET_TP2; CLR_TP2;
     }
   }
 
