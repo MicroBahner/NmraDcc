@@ -463,7 +463,7 @@ void ExternalInterruptHandler(void)
         } else {
             // we got two '0' halfbits -> it's the startbit
             // but sync is NOT ok, change IRQ edge.
-            CLR_TP2;
+            CLR_TP2;CLR_TP1;
             if ( ISREdge == RISING ) ISREdge = FALLING; else ISREdge = RISING;
             DccRx.State = WAIT_DATA ;
             CLR_TP1;
@@ -476,7 +476,7 @@ void ExternalInterruptHandler(void)
             DccRx.BitCount = 0 ;
             DccRx.chkSum = 0 ;
             DccRx.TempByte = 0 ;
-            SET_TP1;
+            //SET_TP1;
         }
 		//SET_TP4;
 
@@ -501,11 +501,11 @@ void ExternalInterruptHandler(void)
             bitMax = MAX_PRAEAMBEL;
             bitMin = MIN_ONEBITFULL;
             preambleBitCount = 0;
-            CLR_TP2;
+            CLR_TP2;CLR_TP1;
             DccRx.BitCount = 0;
         } else {
             // we got the startbit
-            CLR_TP2;
+            CLR_TP2;CLR_TP1;
             DccRx.State = WAIT_DATA ;
             CLR_TP1;
             bitMax = MAX_ONEBITFULL;
@@ -518,7 +518,7 @@ void ExternalInterruptHandler(void)
             DccRx.BitCount = 0 ;
             DccRx.chkSum = 0 ;
             DccRx.TempByte = 0 ;
-            SET_TP1;
+            //SET_TP1;
         }
 		
         //SET_TP4;
@@ -573,11 +573,9 @@ void ExternalInterruptHandler(void)
       DccRx.BitCount = 0 ;
       bitMax = MAX_PRAEAMBEL;
       bitMin = MIN_ONEBITFULL;
+      SET_TP1;
       if ( DccRx.chkSum == 0 ) { 
         // Packet is valid
-        SET_TP2;
-        SET_TP1;
-        CLR_TP2;
         #ifdef ESP32
         portENTER_CRITICAL_ISR(&mux);
         #endif
@@ -648,7 +646,7 @@ void ExternalInterruptHandler(void)
         //CLR_TP1;
       }
     } else {
-        CLR_TP2;;
+        CLR_TP2; CLR_TP1;
         preambleBitCount = 0 ;
     }
   }
