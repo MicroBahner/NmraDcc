@@ -400,7 +400,7 @@ void ExternalInterruptHandler(void)
     if ( bitMicros > (bitMax*2) ) {
         // too long - my be false protocol -> start over
         DccRx.State = WAIT_PREAMBLE ;
-        DccRx.BitCount = 0 ;
+        //DccRx.BitCount = 0 ;
         preambleBitCount = 0;
         // SET_TP2; CLR_TP2;
         bitMax = MAX_PRAEAMBEL;
@@ -420,8 +420,7 @@ void ExternalInterruptHandler(void)
         //CLR_TP3;
         return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
     }
-        CLR_TP3;
-        SET_TP3;
+        CLR_TP3; SET_TP3;
 #endif
     
     DccBitVal = ( bitMicros < bitMax );
@@ -508,8 +507,8 @@ void ExternalInterruptHandler(void)
             bitMax = MAX_ONEBITFULL;
             bitMin = MIN_ONEBITFULL;
             DccRx.PacketBuf.Size = 0;
-            for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
-            DccRx.PacketBuf.Data[i] = 0;
+            /*for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
+            DccRx.PacketBuf.Data[i] = 0;*/
             DccRx.PacketBuf.PreambleBits = preambleBitCount;
             DccRx.BitCount = 0 ;
             DccRx.chkSum = 0 ;
@@ -550,8 +549,8 @@ void ExternalInterruptHandler(void)
             bitMin = MIN_ONEBITFULL;
             // initialize packet buffer
             DccRx.PacketBuf.Size = 0;
-            for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
-            DccRx.PacketBuf.Data[i] = 0;
+            /*for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
+            DccRx.PacketBuf.Data[i] = 0;*/
             DccRx.PacketBuf.PreambleBits = preambleBitCount;
             DccRx.BitCount = 0 ;
             DccRx.chkSum = 0 ;
@@ -1664,6 +1663,8 @@ uint8_t NmraDcc::process()
     #ifdef DCC_DBGVAR
     countOf.Tel++;
     #endif
+    // Clear trailing bytes
+    for ( byte i=Msg.Size; i< MAX_DCC_MESSAGE_LEN; i++ ) Msg.Data[i] = 0;
     
 	if( notifyDccMsg ) 	notifyDccMsg( &Msg );
 		
