@@ -451,8 +451,8 @@ void ExternalInterruptHandler(void)
         CLR_TP1;
         // initialize packet buffer
         DccRx.PacketBuf.Size = 0;
-        for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
-            DccRx.PacketBuf.Data[i] = 0;
+        /*for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
+            DccRx.PacketBuf.Data[i] = 0;*/
         DccRx.PacketBuf.PreambleBits = preambleBitCount;
         DccRx.BitCount = 0 ;
         DccRx.chkSum = 0 ;
@@ -528,8 +528,8 @@ void ExternalInterruptHandler(void)
             bitMax = MAX_ONEBITFULL;
             bitMin = MIN_ONEBITFULL;
             DccRx.PacketBuf.Size = 0;
-            for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
-            DccRx.PacketBuf.Data[i] = 0;
+            /*for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
+            DccRx.PacketBuf.Data[i] = 0;*/
             DccRx.PacketBuf.PreambleBits = preambleBitCount;
             DccRx.BitCount = 0 ;
             DccRx.chkSum = 0 ;
@@ -570,8 +570,8 @@ void ExternalInterruptHandler(void)
             bitMin = MIN_ONEBITFULL;
             // initialize packet buffer
             DccRx.PacketBuf.Size = 0;
-            for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
-            DccRx.PacketBuf.Data[i] = 0;
+            /*for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
+            DccRx.PacketBuf.Data[i] = 0;*/
             DccRx.PacketBuf.PreambleBits = preambleBitCount;
             DccRx.BitCount = 0 ;
             DccRx.chkSum = 0 ;
@@ -1693,6 +1693,8 @@ uint8_t NmraDcc::process()
     #ifdef DCC_DBGVAR
     countOf.Tel++;
     #endif
+    // Clear trailing bytes
+    for ( byte i=Msg.Size; i< MAX_DCC_MESSAGE_LEN; i++ ) Msg.Data[i] = 0;
     
 	if( notifyDccMsg ) 	notifyDccMsg( &Msg );
 		
