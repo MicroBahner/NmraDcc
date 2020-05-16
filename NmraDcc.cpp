@@ -96,16 +96,15 @@
 //                                        
 //                                           
 //           
-//------------------------------------------------------------------------
 
+//------------------------------------------------------------------------
+// if this is commented out, bit synchronisation is only done after wrong checksum
+#define SYNC_ALWAYS
+
+// if this is commented out, Zero-Bit_Stretching is not supported
+// ( Bits longer than 2* MAX ONEBIT are treated as error )
 #define SUPPORT_ZERO_BIT_STRETCHING
-/*#ifdef SUPPORT_ZERO_BIT_STRETCHING
-    #define MAX_ZEROBITFULL 10100
-    #define MAX_ZEROBITHALF 10000
-#else
-    #define MAX_ZEROBITFULL 250
-    #define MAX_ZEROBITHALF 125
-#endif*/
+
 #define MAX_ONEBITFULL  146
 #define MAX_PRAEAMBEL   146 
 #define MAX_ONEBITHALF  82
@@ -442,6 +441,7 @@ void ExternalInterruptHandler(void)
     SET_TP2;
     break;
 
+#ifndef SNC_ALWAYS
   case WAIT_START_BIT_FULL:
     // wait for startbit without level checking
     if ( !DccBitVal ) {
@@ -460,7 +460,7 @@ void ExternalInterruptHandler(void)
         //SET_TP1;
     }
     break;
-    
+#endif    
   case WAIT_START_BIT:
     // we are looking for first half "0" bit after preamble
     switch ( halfBit ) {
@@ -686,11 +686,13 @@ void ExternalInterruptHandler(void)
       //SET_TP2;
       if( preambleBitCount > 10 ) {
         CLR_TP2;
+#ifndef SNC_ALWAYS
         if ( DccRx.chkSum == 0 ) { 
             // sync must be correct if chksum was ok, no need to check sync
             DccRx.State = WAIT_START_BIT_FULL;
         } else {
-            DccRx.State = WAIT_START_BIT ;
+#endif
+        DccRx.State = WAIT_START_BIT ;
             SET_TP2;
             // While waiting for the start bit, detect halfbit lengths. We will detect the correct
             // sync and detect whether we see a false (e.g. motorola) protocol
@@ -709,7 +711,9 @@ void ExternalInterruptHandler(void)
             bitMax = MAX_ONEBITHALF;
             bitMin = MIN_ONEBITHALF;
             //CLR_TP1;
+#ifndef SNC_ALWAYS
         }
+#endif
       }
     } else {
         CLR_TP1;
