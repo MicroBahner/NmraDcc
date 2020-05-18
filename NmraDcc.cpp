@@ -37,7 +37,7 @@
 //                       Minor fixes to pass NMRA Baseline Conformance Tests.
 //            2018-12-17 added ESP32 support by Trusty (thierry@lapajaparis.net)
 //            2019-02-17 added ESP32 specific changes by Hans Tanner
-//            2020-05-11 
+//            2020-05-15 changes to pass NMRA Tests ( always search for preamble )
 //------------------------------------------------------------------------
 //
 // purpose:   Provide a simplified interface to decode NMRA DCC packets
@@ -98,7 +98,7 @@
 //           
 
 //------------------------------------------------------------------------
-// if this is commented out, bit synchronisation is only done after wrong checksum
+// if this is commented out, bit synchronisation is only done after a wrong checksum
 #define SYNC_ALWAYS
 
 // if this is commented out, Zero-Bit_Stretching is not supported
@@ -110,12 +110,11 @@
 #define MAX_ONEBITHALF  82
 #define MIN_ONEBITFULL  82
 #define MIN_ONEBITHALF  35
-//#define MAX_GLITCH      28
 #define MAX_BITDIFF     24
 
 
 // Debug-Ports
-#define debug     // Testpulse for logic analyser
+//#define debug     // Testpulse for logic analyser
 #ifdef debug 
     #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
         #define MODE_TP1 DDRF |= (1<<2) //pinA2
@@ -272,7 +271,9 @@ typedef enum
 {
   WAIT_PREAMBLE = 0,
   WAIT_START_BIT,
+  #ifndef SYNC_ALWAYS
   WAIT_START_BIT_FULL,
+  #endif
   WAIT_DATA,
   WAIT_END_BIT
 } 
@@ -441,7 +442,7 @@ void ExternalInterruptHandler(void)
     SET_TP2;
     break;
 
-#ifndef SNC_ALWAYS
+#ifndef SYNC_ALWAYS
   case WAIT_START_BIT_FULL:
     // wait for startbit without level checking
     if ( !DccBitVal ) {
@@ -686,7 +687,7 @@ void ExternalInterruptHandler(void)
       //SET_TP2;
       if( preambleBitCount > 10 ) {
         CLR_TP2;
-#ifndef SNC_ALWAYS
+#ifndef SYNC_ALWAYS
         if ( DccRx.chkSum == 0 ) { 
             // sync must be correct if chksum was ok, no need to check sync
             DccRx.State = WAIT_START_BIT_FULL;
@@ -711,7 +712,7 @@ void ExternalInterruptHandler(void)
             bitMax = MAX_ONEBITHALF;
             bitMin = MIN_ONEBITHALF;
             //CLR_TP1;
-#ifndef SNC_ALWAYS
+#ifndef SYNC_ALWAYS
         }
 #endif
       }
