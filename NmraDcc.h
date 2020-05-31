@@ -54,8 +54,6 @@
 #include "WProgram.h"
 #endif
 
-#include "EEPROM.h"
-
 #ifndef NMRADCC_IS_IN
 #define NMRADCC_IS_IN
 
@@ -745,4 +743,3 @@ extern void notifyDccSigState( uint16_t Addr, uint8_t OutputIndex, uint8_t State
 #endif
 
 #endif
-

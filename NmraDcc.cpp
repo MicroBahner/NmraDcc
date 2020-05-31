@@ -46,9 +46,7 @@
 //------------------------------------------------------------------------
 
 #include "NmraDcc.h"
-#ifdef __AVR_MEGA__
-#include <avr/eeprom.h>
-#endif
+#include "EEPROM.h"
 
 // Uncomment to print DEBUG messages
 // #define DEBUG_PRINT		
@@ -401,7 +399,7 @@ void ExternalInterruptHandler(void)
     if ( bitMicros > (bitMax*2) ) {
         // too long - my be false protocol -> start over
         DccRx.State = WAIT_PREAMBLE ;
-        //DccRx.BitCount = 0 ;
+        DccRx.BitCount = 0 ;
         preambleBitCount = 0;
         // SET_TP2; CLR_TP2;
         bitMax = MAX_PRAEAMBEL;
@@ -421,7 +419,8 @@ void ExternalInterruptHandler(void)
         //CLR_TP3;
         return; //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> abort IRQ
     }
-        CLR_TP3; SET_TP3;
+        CLR_TP3;
+        SET_TP3;
 #endif
     
     DccBitVal = ( bitMicros < bitMax );
@@ -748,11 +747,13 @@ void ackAdvancedCV(void)
 }
 
 
-uint8_t readEEPROM( unsigned int CV ) {
+uint8_t readEEPROM( unsigned int CV )
+{
     return EEPROM.read(CV) ;
 }
 
-void writeEEPROM( unsigned int CV, uint8_t Value ) {
+void writeEEPROM( unsigned int CV, uint8_t Value )
+{
     EEPROM.write(CV, Value) ;
   #if defined(ESP8266)
     EEPROM.commit();
@@ -762,14 +763,16 @@ void writeEEPROM( unsigned int CV, uint8_t Value ) {
   #endif
 }
 
-bool readyEEPROM() {
-    #ifdef __AVR_MEGA__
-        return eeprom_is_ready();
-    #else
-        return true;
-    #endif
+bool readyEEPROM()
+{
+#if defined ARDUINO_ARCH_MEGAAVR
+	return bit_is_clear(NVMCTRL.STATUS,NVMCTRL_EEBUSY_bp);
+#elif defined __AVR_MEGA__
+	return eeprom_is_ready();
+#else
+	return true;
+#endif
 }
-
 
 uint8_t validCV( uint16_t CV, uint8_t Writable )
 {
