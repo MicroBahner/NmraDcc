@@ -37,7 +37,7 @@
 //                       Minor fixes to pass NMRA Baseline Conformance Tests.
 //            2018-12-17 added ESP32 support by Trusty (thierry@lapajaparis.net)
 //            2019-02-17 added ESP32 specific changes by Hans Tanner
-//            2020-05-11 
+//            2020-05-15 changes to pass NMRA Tests ( always search for preamble )
 //------------------------------------------------------------------------
 //
 // purpose:   Provide a simplified interface to decode NMRA DCC packets
@@ -96,27 +96,25 @@
 //                                        
 //                                           
 //           
-//------------------------------------------------------------------------
 
+//------------------------------------------------------------------------
+// if this is commented out, bit synchronisation is only done after a wrong checksum
+#define SYNC_ALWAYS
+
+// if this is commented out, Zero-Bit_Stretching is not supported
+// ( Bits longer than 2* MAX ONEBIT are treated as error )
 #define SUPPORT_ZERO_BIT_STRETCHING
-/*#ifdef SUPPORT_ZERO_BIT_STRETCHING
-    #define MAX_ZEROBITFULL 10100
-    #define MAX_ZEROBITHALF 10000
-#else
-    #define MAX_ZEROBITFULL 250
-    #define MAX_ZEROBITHALF 125
-#endif*/
+
 #define MAX_ONEBITFULL  146
 #define MAX_PRAEAMBEL   146 
 #define MAX_ONEBITHALF  82
 #define MIN_ONEBITFULL  82
 #define MIN_ONEBITHALF  35
-//#define MAX_GLITCH      28
 #define MAX_BITDIFF     24
 
 
 // Debug-Ports
-#define debug     // Testpulse for logic analyser
+//#define debug     // Testpulse for logic analyser
 #ifdef debug 
     #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
         #define MODE_TP1 DDRF |= (1<<2) //pinA2
@@ -273,6 +271,9 @@ typedef enum
 {
   WAIT_PREAMBLE = 0,
   WAIT_START_BIT,
+  #ifndef SYNC_ALWAYS
+  WAIT_START_BIT_FULL,
+  #endif
   WAIT_DATA,
   WAIT_END_BIT
 } 
@@ -440,6 +441,26 @@ void ExternalInterruptHandler(void)
     SET_TP2;
     break;
 
+#ifndef SYNC_ALWAYS
+  case WAIT_START_BIT_FULL:
+    // wait for startbit without level checking
+    if ( !DccBitVal ) {
+        // we got the startbit
+        CLR_TP2;CLR_TP1;
+        DccRx.State = WAIT_DATA ;
+        CLR_TP1;
+        // initialize packet buffer
+        DccRx.PacketBuf.Size = 0;
+        /*for(uint8_t i = 0; i< MAX_DCC_MESSAGE_LEN; i++ )
+            DccRx.PacketBuf.Data[i] = 0;*/
+        DccRx.PacketBuf.PreambleBits = preambleBitCount;
+        DccRx.BitCount = 0 ;
+        DccRx.chkSum = 0 ;
+        DccRx.TempByte = 0 ;
+        //SET_TP1;
+    }
+    break;
+#endif    
   case WAIT_START_BIT:
     // we are looking for first half "0" bit after preamble
     switch ( halfBit ) {
@@ -665,25 +686,34 @@ void ExternalInterruptHandler(void)
       //SET_TP2;
       if( preambleBitCount > 10 ) {
         CLR_TP2;
+#ifndef SYNC_ALWAYS
+        if ( DccRx.chkSum == 0 ) { 
+            // sync must be correct if chksum was ok, no need to check sync
+            DccRx.State = WAIT_START_BIT_FULL;
+        } else {
+#endif
         DccRx.State = WAIT_START_BIT ;
-        SET_TP2;
-        // While waiting for the start bit, detect halfbit lengths. We will detect the correct
-        // sync and detect whether we see a false (e.g. motorola) protocol
+            SET_TP2;
+            // While waiting for the start bit, detect halfbit lengths. We will detect the correct
+            // sync and detect whether we see a false (e.g. motorola) protocol
 
-        #if defined ( __STM32F1__ )
-		detachInterrupt( DccProcState.ExtIntNum );
-		#endif
-        #ifdef ESP32
-		ISRWatch = CHANGE;
-        #else
-        attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, CHANGE);
-        #endif
-        ISRChkMask = 0;         // AVR level check is always true with this settings
-        ISRLevel = 0;           // ( there cannot be false edge IRQ's with CHANGE )
-        halfBit = 0;
-        bitMax = MAX_ONEBITHALF;
-        bitMin = MIN_ONEBITHALF;
-        //CLR_TP1;
+            #if defined ( __STM32F1__ )
+            detachInterrupt( DccProcState.ExtIntNum );
+            #endif
+            #ifdef ESP32
+            ISRWatch = CHANGE;
+            #else
+            attachInterrupt( DccProcState.ExtIntNum, ExternalInterruptHandler, CHANGE);
+            #endif
+            ISRChkMask = 0;         // AVR level check is always true with this settings
+            ISRLevel = 0;           // ( there cannot be false edge IRQ's with CHANGE )
+            halfBit = 0;
+            bitMax = MAX_ONEBITHALF;
+            bitMin = MIN_ONEBITHALF;
+            //CLR_TP1;
+#ifndef SYNC_ALWAYS
+        }
+#endif
       }
     } else {
         CLR_TP1;
